@@ -1,6 +1,8 @@
 [submodule "transformers"]
 	path = transformers
-	url = git@github.com:huggingface/transformers.git
+	url = https://github.com/huggingface/transformers.git
+    branch = 067923d3267325f525f4e46f357360c191ba562e
 [submodule "coco_caption"]
 	path = coco_caption
-	url = git@github.com:LuoweiZhou/coco-caption.git
+	url = https://github.com/LuoweiZhou/coco-caption.git
+    branch = de6f385503ac9a4305a1dcdc39c02312f9fa13fc

@@ -51,7 +51,7 @@ training:
   loss-type: 'alignment-entropy-distillation' # 'selfaggregation-entropy' #'distillation'
   loss-weights: 'auto'
   alignment-mode: 'MrSw'
-  distillation-mode: 'mse'
+  distillation-mode: 'ordinal'
   measure: 'dot'
   margin: 0.2
   bs: 32

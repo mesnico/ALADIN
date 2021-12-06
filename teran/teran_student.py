@@ -82,12 +82,18 @@ class JointTextImageTransformerEncoder(nn.Module):
         self.text_aggregation_type = config['model']['text-aggregation']
         self.img_aggregation_type = config['model']['image-aggregation']
         if 'distillation' in config['training']['loss-type']:
-            self.final_projection_net = nn.Sequential(
-                nn.Linear(embed_size, embed_size),
-                nn.Dropout(0.1),
-                nn.ReLU(),
-                nn.Linear(embed_size, embed_size)
-            )
+            tern_transformer_layer = nn.TransformerEncoderLayer(d_model=embed_size, nhead=4,
+                                                             dim_feedforward=embed_size,
+                                                             dropout=dropout)
+            self.final_projection_net = nn.TransformerEncoder(tern_transformer_layer,
+                                                               num_layers=1)
+
+            # self.final_projection_net = nn.Sequential(
+            #     nn.Linear(embed_size, embed_size),
+            #     nn.Dropout(0.1),
+            #     nn.ReLU(),
+            #     nn.Linear(embed_size, embed_size)
+            # )
         else:
             self.final_projection_net = None
 
@@ -191,10 +197,12 @@ class JointTextImageTransformerEncoder(nn.Module):
         else:
             l1_regul_loss = 0
 
-        cross_attention_image, cross_attention_caption = set_image_embeddings[0], set_caption_embeddings[0] # self.self_aggregation(img_emb_set, cap_emb_seq, feat_len, cap_len)
+        # cross_attention_image, cross_attention_caption = set_image_embeddings[0], set_caption_embeddings[0] # self.self_aggregation(img_emb_set, cap_emb_seq, feat_len, cap_len)
         if self.final_projection_net:
-            cross_attention_caption = self.final_projection_net(cross_attention_caption)
-            cross_attention_image = self.final_projection_net(cross_attention_image)
+            cross_attention_caption = self.final_projection_net(set_caption_embeddings, src_key_padding_mask=txt_mask)[0]
+            cross_attention_image = self.final_projection_net(set_image_embeddings, src_key_padding_mask=img_mask)[0]
+        else:
+            cross_attention_image, cross_attention_caption = set_image_embeddings[0], set_caption_embeddings[0]
         # normalize every vector of the set and the self-aggregated vectors
         set_image_embeddings = F.normalize(set_image_embeddings, p=2, dim=2)
         set_caption_embeddings = F.normalize(set_caption_embeddings, p=2, dim=2)

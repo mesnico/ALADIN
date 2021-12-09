@@ -357,7 +357,7 @@ class PermInvMatchingLoss(nn.Module):
 
 
 class DistillationLoss(nn.Module):
-    def __init__(self, mode='mse', margin=0.1, threshold=0.1, stride=3):
+    def __init__(self, mode='mse', margin=0.2, threshold=0.1, stride=3):
         super().__init__()
         self.mode = mode
         self.margin = margin
@@ -367,12 +367,13 @@ class DistillationLoss(nn.Module):
             self.wb = nn.Parameter(torch.FloatTensor([0.5, 0.5]), requires_grad=True)
 
     def forward(self, teacher_scores, student_scores):
+        teacher_scores = teacher_scores.detach()    # do not backprop through the teacher branch
         if self.mode == 'mse':
             student_scores = student_scores * self.wb[0] + self.wb[1] # (student_scores + 1) / 2
             loss = F.mse_loss(student_scores.view(-1).unsqueeze(1), teacher_scores.view(-1).unsqueeze(1))
         elif self.mode == 'ordinal':
             # do not propagate the gradients directly through the teacher pipeline
-            teacher_scores = teacher_scores.detach()
+            # teacher_scores = teacher_scores.detach()
             # in this case, the order established by the teacher should respect the one in the student, both in rows and in columns (image and text search)
 
             # image to caption search (by row)
@@ -396,5 +397,51 @@ class DistillationLoss(nn.Module):
             ordinal_loss_cols = F.relu(self.margin + student_differences_col).mean()
 
             loss = ordinal_loss_rows + ordinal_loss_cols
+
+        elif self.mode == 'contrastive':
+            mask = torch.eye(teacher_scores.size(0)) > .5
+            if torch.cuda.is_available():
+                mask = mask.cuda()
+            teacher_scores_nodiag = teacher_scores.detach().masked_fill_(mask, 0)
+
+            diagonal = student_scores.diag().view(student_scores.size(0), 1)
+            d1 = diagonal.expand_as(student_scores)
+            d2 = diagonal.t().expand_as(student_scores)
+
+            # compare every diagonal score to scores in its column
+            # caption retrieval
+            cost_s = (self.margin + student_scores - d1).clamp(min=0)
+            # compare every diagonal score to scores in its row
+            # image retrieval
+            cost_im = (self.margin + student_scores - d2).clamp(min=0)
+
+            # keep the maximum violating negative for each query, taking the hard negative from the teacher scores
+            negative_idx_s = teacher_scores_nodiag.max(1)[1]
+            cost_s = cost_s.index_select(dim=1, index=negative_idx_s)
+
+            negative_idxs_im = teacher_scores_nodiag.max(0)[1]
+            cost_im = cost_im.index_select(dim=0, index=negative_idxs_im)
+
+            loss = cost_s.sum() + cost_im.sum()
+
+        elif self.mode == 'listnet':
+            eps = 1e-10
+            temperature = 4.0
+
+            # sentence retrieval
+            preds_smax = F.softmax(student_scores * temperature, dim=1)
+            true_smax = F.softmax(teacher_scores, dim=1)
+            preds_smax = preds_smax + eps
+            preds_log = torch.log(preds_smax)
+            s_cost = torch.mean(-torch.sum(true_smax * preds_log, dim=1))
+
+            # image retrieval
+            preds_smax = F.softmax(student_scores * temperature, dim=0)
+            true_smax = F.softmax(teacher_scores, dim=0)
+            preds_smax = preds_smax + eps
+            preds_log = torch.log(preds_smax)
+            im_cost = torch.mean(-torch.sum(true_smax * preds_log, dim=0))
+
+            loss = im_cost + s_cost
 
         return loss

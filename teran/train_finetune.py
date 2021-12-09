@@ -30,7 +30,13 @@ from teran.evaluate_utils.dcg import DCG
 import logging
 from torch.utils.tensorboard import SummaryWriter
 
+best_rsum = 0
+best_ndcg_sum = 0
+
 def main():
+    global best_rsum
+    global best_ndcg_sum
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", default='datasets/coco_ir', type=str, required=False,
                         help="The input data dir with all required files.")
@@ -185,8 +191,6 @@ def main():
         'pre-extracted-features'])
 
     # Train the Model
-    best_rsum = 0
-    best_ndcg_sum = 0
     loss_type = config['training']['loss-type']
     alignment_mode = config['training']['alignment-mode'] if 'alignment' in loss_type else None
 
@@ -298,7 +302,7 @@ def main():
 
     for epoch in range(start_epoch, args.num_epochs):
         # train for one epoch
-        train(args, train_loader, student_model, optimizer, epoch, tb_logger, val_loader, None,
+        train(args, config, train_loader, student_model, optimizer, epoch, tb_logger, val_loader, None,
               measure=config['training']['measure'], grad_clip=config['training']['grad-clip'],
               scheduler=scheduler, warmup_scheduler=warmup_scheduler, ndcg_val_scorer=ndcg_val_scorer,
               ndcg_test_scorer=None, alignment_mode=alignment_mode, loss_type=loss_type)
@@ -380,7 +384,9 @@ def get_teacher_scores(args, model, batch, subdivs=40):
         # result = [_.to(torch.device("cpu")) for _ in result]
 
 
-def train(opt, train_loader, student_model, optimizer, epoch, tb_logger, val_loader, test_loader, measure='cosine', grad_clip=-1, scheduler=None, warmup_scheduler=None, ndcg_val_scorer=None, ndcg_test_scorer=None, alignment_mode=None, loss_type=None):
+def train(opt, config, train_loader, student_model, optimizer, epoch, tb_logger, val_loader, test_loader, measure='cosine', grad_clip=-1, scheduler=None, warmup_scheduler=None, ndcg_val_scorer=None, ndcg_test_scorer=None, alignment_mode=None, loss_type=None):
+    global best_rsum
+
     # average meters to record the training statistics
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -442,7 +448,20 @@ def train(opt, train_loader, student_model, optimizer, epoch, tb_logger, val_loa
 
         # validate at every val_step
         if student_model.Eiters % opt.val_step == 0:
-            validate(val_loader, student_model, tb_logger, measure=measure, log_step=opt.log_step, ndcg_scorer=ndcg_val_scorer, alignment_mode=alignment_mode, loss_type=loss_type)
+            rsum, _ = validate(val_loader, student_model, tb_logger, measure=measure, log_step=opt.log_step, ndcg_scorer=ndcg_val_scorer, alignment_mode=alignment_mode, loss_type=loss_type)
+
+            is_best_rsum = rsum > best_rsum
+            best_rsum = max(rsum, best_rsum)
+
+            save_checkpoint({
+                'epoch': epoch + 1,
+                'model': student_model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'scheduler': scheduler.state_dict() if scheduler is not None else None,
+                'opt': opt,
+                'config': config,
+                'Eiters': student_model.Eiters,
+            }, is_best_rsum, False, prefix=opt.logger_name + '/')
 
         # if model.Eiters % opt.test_step == 0:
         #     test(test_loader, model, tb_logger, measure=measure, log_step=opt.log_step, ndcg_scorer=ndcg_test_scorer)

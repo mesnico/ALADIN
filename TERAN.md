@@ -48,9 +48,14 @@ Download the IR data
 path/to/azcopy copy 'https://biglmdiag.blob.core.windows.net/vinvl/datasets/coco_ir' <data-folder> --recursive
 ```
 
+Download the pre-extracted Bottom-Up features 
+```
+path/to/azcopy copy 'https://biglmdiag.blob.core.windows.net/vinvl/image_features/coco_X152C4_frcnnbig2_exp168model_0060000model.roi_heads.nm_filter_2_model.roi_heads.score_thresh_0.2/model_0060000/' <features-folder> --recursive
+```
+
 ## Run OSCAR-TERAN:
 ``` 
 cd teran 
 
-python train_finetune.py --do_test --do_eval --num_captions_per_img_val 5 --data_dir <data-folder>/coco_ir --img_feat_file <data-folder>/coco_ir/coco_2014_train_val/model_0060000/features.tsv --cross_image_eval --per_gpu_eval_batch_size 64 --eval_model_dir <checkpoint-target-folder>/checkpoint-0132780 --config configs/teran_finetune_on_oscar_coco.yaml --logger_name <output-folder> --val_step 7000 --max_seq_length 50 --max_img_seq_length 34
+python train_finetune.py --do_test --do_eval --num_captions_per_img_val 5 --data_dir <data-folder>/coco_ir --img_feat_file <features-folder>/features.tsv --cross_image_eval --per_gpu_eval_batch_size 64 --eval_model_dir <checkpoint-target-folder>/checkpoint-0132780 --config configs/teran_finetune_on_oscar_coco.yaml --logger_name <output-folder> --val_step 7000 --max_seq_length 50 --max_img_seq_length 34
 ```

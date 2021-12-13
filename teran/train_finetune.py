@@ -410,7 +410,7 @@ def train(opt, config, train_loader, student_model, optimizer, epoch, tb_logger,
         student_model.logger = train_logger
 
         example_imgs, example_txts = train_data
-        loss, loss_dict = student_model(example_imgs, example_txts)
+        loss, loss_dict = student_model(example_imgs, example_txts, epoch=epoch, distill_epoch=1)
         # loss = sum(loss for loss in loss_dict.values())
 
         # compute gradient and do SGD step

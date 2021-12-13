@@ -38,7 +38,8 @@ model:
   embed-size: 768
   text-aggregation: 'first'
   image-aggregation: 'first'
-  layers: 1
+  teran-layers: 0
+  tern-layers: 1
   exclude-stopwords: False
   shared-transformer: True
   depth-aggregation: 'gated' # 'gated', 'mean' or null
@@ -48,10 +49,10 @@ training:
   lr: 0.00001  # 0.000006
   grad-clip: 2.0
   max-violation: True
-  loss-type: 'alignment-entropy-distillation' # 'selfaggregation-entropy' #'distillation'
+  loss-type: 'alignment-distillation' # 'selfaggregation-entropy' #'distillation'
   loss-weights: 'auto'
   alignment-mode: 'MrSw'
-  distillation-mode: 'ordinal'
+  distillation-mode: 'listnet'
   measure: 'dot'
   margin: 0.2
   bs: 32

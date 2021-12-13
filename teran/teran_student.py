@@ -47,7 +47,8 @@ class JointTextImageTransformerEncoder(nn.Module):
         visual_feat_dim = config['image-model']['feat-dim']
         caption_feat_dim = config['text-model']['word-dim']
         dropout = config['model']['dropout']
-        layers = config['model']['layers']
+        teran_layers = config['model']['teran-layers']
+        tern_layers = config['model']['tern-layers']
         embed_size = config['model']['embed-size']
         self.order_embeddings = config['training']['measure'] == 'order'
         # self.img_enc = EncoderImage(config)
@@ -61,32 +62,38 @@ class JointTextImageTransformerEncoder(nn.Module):
         if self.depth_aggregation:
             self.depth_aggregator_model = DepthAggregatorModel(config, input_dim=embed_size)
         self.loss_type = config['training']['loss-type']
+        self.text_aggregation_type = config['model']['text-aggregation']
+        self.img_aggregation_type = config['model']['image-aggregation']
 
-        transformer_layer_1 = nn.TransformerEncoderLayer(d_model=embed_size, nhead=4,
-                                                       dim_feedforward=embed_size,
-                                                       dropout=dropout)
-        self.transformer_encoder_1 = nn.TransformerEncoder(transformer_layer_1,
-                                                           num_layers=layers)
-        if not self.shared_transformer:
-            transformer_layer_2 = nn.TransformerEncoderLayer(d_model=embed_size, nhead=4,
-                                                             dim_feedforward=embed_size,
-                                                             dropout=dropout)
-            self.transformer_encoder_2 = nn.TransformerEncoder(transformer_layer_2,
-                                                               num_layers=layers)
+        if teran_layers == 0:
+            self.text_aggregation_type = None
+            self.img_aggregation_type = None
+
+        if self.text_aggregation_type is not None:
+            transformer_layer_1 = nn.TransformerEncoderLayer(d_model=embed_size, nhead=4,
+                                                           dim_feedforward=embed_size,
+                                                           dropout=dropout)
+            self.transformer_encoder_1 = nn.TransformerEncoder(transformer_layer_1,
+                                                               num_layers=teran_layers)
+        if self.img_aggregation_type is not None:
+            if not self.shared_transformer:
+                transformer_layer_2 = nn.TransformerEncoderLayer(d_model=embed_size, nhead=4,
+                                                                 dim_feedforward=embed_size,
+                                                                 dropout=dropout)
+                self.transformer_encoder_2 = nn.TransformerEncoder(transformer_layer_2,
+                                                                   num_layers=teran_layers)
         if self.depth_aggregation is not None and self.depth_aggregation == 'transformer':
             depth_transformer_layer = nn.TransformerEncoderLayer(d_model=hidden_size, nhead=4, dim_feedforward=hidden_size, dropout=dropout)
             self.depth_transformer = nn.TransformerEncoder(depth_transformer_layer, num_layers=1)
 
         self.text_aggregation = Aggregator(embed_size, aggregation_type=config['model']['text-aggregation'])
         self.image_aggregation = Aggregator(embed_size, aggregation_type=config['model']['image-aggregation'])
-        self.text_aggregation_type = config['model']['text-aggregation']
-        self.img_aggregation_type = config['model']['image-aggregation']
         if 'distillation' in config['training']['loss-type']:
             tern_transformer_layer = nn.TransformerEncoderLayer(d_model=embed_size, nhead=4,
                                                              dim_feedforward=embed_size,
                                                              dropout=dropout)
             self.final_projection_net = nn.TransformerEncoder(tern_transformer_layer,
-                                                               num_layers=1)
+                                                               num_layers=tern_layers)
 
             # self.final_projection_net = nn.Sequential(
             #     nn.Linear(embed_size, embed_size),
@@ -127,66 +134,52 @@ class JointTextImageTransformerEncoder(nn.Module):
         max_language_token_len = inputs_txts['input_ids'].shape[1]
         max_cap_len = max(cap_len)
         max_img_len = max(feat_len)
-        c_emb = txt_bert_output[0][:, :max_cap_len]
-        i_emb = img_bert_output[0][:, max_language_token_len:max_language_token_len + max_img_len]
+
+        # masks
+        txt_mask = torch.zeros(bs, max(cap_len)).bool()
+        txt_mask = txt_mask.to(inputs_txts['input_ids'].device)
+        for m, c_len in zip(txt_mask, cap_len):
+            m[c_len:] = True
+
+        img_mask = torch.zeros(bs, max(feat_len)).bool()
+        img_mask = img_mask.to(inputs_imgs['img_feats'].device)
+        for m, v_len in zip(img_mask, feat_len):
+            m[v_len:] = True
+
+        if self.depth_aggregation:
+            hidden_states_img = torch.stack(img_bert_output[2], dim=0)   # depth x B x N x dim
+            hidden_states_img = hidden_states_img[:, :, max_language_token_len:max_language_token_len + max_img_len, :]
+            i_emb = self.depth_aggregator_model(hidden_states_img, img_mask).permute(1, 0, 2)    # S x B x dim
+
+            hidden_states_txt = torch.stack(txt_bert_output[2], dim=0)
+            hidden_states_txt = hidden_states_txt[:, :, :max_cap_len, :]
+            c_emb = self.depth_aggregator_model(hidden_states_txt, txt_mask).permute(1, 0, 2)   # S x B x dim
+
+        else:
+            c_emb = txt_bert_output[0][:, :max_cap_len].permute(1, 0, 2)
+            i_emb = img_bert_output[0][:, max_language_token_len:max_language_token_len + max_img_len].permute(1, 0, 2)
 
         # forward the captions
         if self.text_aggregation_type is not None:
-            c_emb = self.cap_proj(c_emb)
+            # c_emb = self.cap_proj(c_emb)
 
-            txt_mask = torch.zeros(bs, max(cap_len)).bool()
-            txt_mask = txt_mask.to(inputs_txts['input_ids'].device)
-            for m, c_len in zip(txt_mask, cap_len):
-                m[c_len:] = True
-            set_caption_embeddings = self.transformer_encoder_1(c_emb.permute(1, 0, 2), src_key_padding_mask=txt_mask)  # S_txt x B x dim
+            set_caption_embeddings = self.transformer_encoder_1(c_emb, src_key_padding_mask=txt_mask)  # S_txt x B x dim
             # full_cap_emb_aggr = self.text_aggregation(full_cap_emb, cap_len, mask)
         # else use the embedding output by the txt model
         else:
-            set_caption_embeddings = c_emb.permute(1, 0, 2)
+            set_caption_embeddings = c_emb
 
         # forward the regions
         if self.img_aggregation_type is not None:
-            i_emb = self.img_proj(i_emb)
+            # i_emb = self.img_proj(i_emb)
 
-            img_mask = torch.zeros(bs, max(feat_len)).bool()
-            img_mask = img_mask.to(inputs_imgs['img_feats'].device)
-            for m, v_len in zip(img_mask, feat_len):
-                m[v_len:] = True
             if self.shared_transformer:
-                set_image_embeddings = self.transformer_encoder_1(i_emb.permute(1, 0, 2), src_key_padding_mask=img_mask)  # S_txt x B x dim
+                set_image_embeddings = self.transformer_encoder_1(i_emb, src_key_padding_mask=img_mask)  # S_txt x B x dim
             else:
-                set_image_embeddings = self.transformer_encoder_2(i_emb.permute(1, 0, 2), src_key_padding_mask=img_mask)  # S_txt x B x dim
+                set_image_embeddings = self.transformer_encoder_2(i_emb, src_key_padding_mask=img_mask)  # S_txt x B x dim
             # full_img_emb_aggr = self.image_aggregation(full_img_emb, feat_len, mask)
         else:
-            set_image_embeddings = i_emb.permute(1, 0, 2)
-
-        if self.depth_aggregation:
-            last_reg = set_image_embeddings.permute(1, 0, 2).unsqueeze(dim=0)   # 1 x B x N x dim
-            hidden_states_img = torch.stack(img_bert_output[2], dim=0)   # depth x B x N x dim
-            hidden_states_img = hidden_states_img[:, :, max_language_token_len:max_language_token_len + max_img_len, :]
-            depth_regions = torch.cat([hidden_states_img, last_reg], dim=0) # depth+1 x B x S x dim
-            set_image_embeddings = self.depth_aggregator_model(depth_regions, img_mask).permute(1, 0, 2)    # S x B x dim
-            # if self.depth_aggregation == 'transformer':
-            #     depth_regions = depth_regions.view(-1, depth_regions.shape[2], depth_regions.shape[3])  # B*S x depth x dim
-            #     img_trans_out = self.depth_transformer(depth_regions.permute(1, 0, 2)) # depth x B*S x dim
-            #     img_trans_out = img_trans_out[-1]  # B*S x dim
-            #     set_image_embeddings = img_trans_out.view(bs, -1, img_trans_out.shape[1]).permute(1, 0, 2)  # S x B x dim
-            # elif self.depth_aggregation == 'mean':
-            #     set_image_embeddings = depth_regions.mean(dim=2).permute(1, 0, 2)   # S x B x dim
-
-
-            last_word = set_caption_embeddings.permute(1, 0, 2).unsqueeze(dim=0)
-            hidden_states_txt = torch.stack(txt_bert_output[2], dim=0)
-            hidden_states_txt = hidden_states_txt[:, :, :max_cap_len, :]
-            depth_words = torch.cat([hidden_states_txt, last_word], dim=0)  # depth+1 x B x S x dim
-            set_caption_embeddings = self.depth_aggregator_model(depth_words, txt_mask). permute(1, 0, 2)   # S x B x dim
-            # if self.depth_aggregation == 'transformer':
-            #     depth_words = depth_words.view(-1, depth_words.shape[2], depth_words.shape[3])  # B*S x depth x dim
-            #     txt_trans_out = self.depth_transformer(depth_words.permute(1, 0, 2))  # depth x B*S x dim
-            #     txt_trans_out = txt_trans_out[-1]  # B*S x dim
-            #     set_caption_embeddings = txt_trans_out.view(bs, -1, txt_trans_out.shape[1]).permute(1, 0, 2)  # S x B x depth
-            # elif self.depth_aggregation == 'mean':
-            #     set_caption_embeddings = depth_words.mean(dim=2).permute(1, 0, 2)   # S x B x dim
+            set_image_embeddings = i_emb
 
         if self.l1_regularization:
             # compute L1 regularization losses on the hidden states
@@ -199,8 +192,8 @@ class JointTextImageTransformerEncoder(nn.Module):
 
         # cross_attention_image, cross_attention_caption = set_image_embeddings[0], set_caption_embeddings[0] # self.self_aggregation(img_emb_set, cap_emb_seq, feat_len, cap_len)
         if self.final_projection_net:
-            cross_attention_caption = self.final_projection_net(set_caption_embeddings, src_key_padding_mask=txt_mask)[0]
-            cross_attention_image = self.final_projection_net(set_image_embeddings, src_key_padding_mask=img_mask)[0]
+            cross_attention_caption = self.final_projection_net(c_emb, src_key_padding_mask=txt_mask)[0]
+            cross_attention_image = self.final_projection_net(i_emb, src_key_padding_mask=img_mask)[0]
         else:
             cross_attention_image, cross_attention_caption = set_image_embeddings[0], set_caption_embeddings[0]
         # normalize every vector of the set and the self-aggregated vectors
@@ -401,7 +394,7 @@ class TERANStudent(torch.nn.Module):
         # self.logger.update('Le', matching_loss.item() + alignment_loss.item(), img_emb.size(0) if img_emb is not None else img_emb_set.size(1))
         return losses
 
-    def forward(self, example_imgs, example_txts):
+    def forward(self, example_imgs, example_txts, epoch=0, distill_epoch=2):
         """One training step given images and captions.
         """
         # assert self.training()
@@ -413,13 +406,16 @@ class TERANStudent(torch.nn.Module):
         # NOTE: img_feats and cap_feats are S x B x dim
 
         loss_dict = self.forward_loss(img_emb_aggr, cap_emb_aggr, img_feats, cap_feats, img_lengths, cap_lengths, regul_loss)
+        if epoch < distill_epoch:
+            #remove distillation loss
+            loss_dict.pop('distillation', None)
         if self.auto_weight:
             loss = 0
-            for k in self.losses_weights:
+            for k in loss_dict:
                 loss += loss_dict[k] * torch.exp(-self.losses_weights[k]) + self.losses_weights[k]
             loss *= 0.5
         else:
             loss = 0
-            for k in self.losses_weights:
+            for k in loss_dict:
                 loss += loss_dict[k] * self.losses_weights[k]
         return loss, loss_dict

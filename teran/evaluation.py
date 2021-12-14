@@ -372,8 +372,8 @@ def i2t(images, captions, img_lenghts, cap_lenghts, npts=None, return_ranks=Fals
     r10 = 100.0 * len(numpy.where(ranks < 10)[0]) / len(ranks)
     medr = numpy.floor(numpy.median(ranks)) + 1
     meanr = ranks.mean() + 1
-    mean_rougel_ndcg = np.mean(rougel_ndcgs[rougel_ndcgs != 0])
-    mean_spice_ndcg = np.mean(spice_ndcgs[spice_ndcgs != 0])
+    mean_rougel_ndcg = 0
+    mean_spice_ndcg = 0
     if return_ranks:
         return (r1, r5, r10, medr, meanr, mean_rougel_ndcg, mean_spice_ndcg), (ranks, top1)
     else:
@@ -457,8 +457,8 @@ def t2i(images, captions, img_lenghts, cap_lenghts, npts=None, return_ranks=Fals
     r10 = 100.0 * len(numpy.where(ranks < 10)[0]) / len(ranks)
     medr = numpy.floor(numpy.median(ranks)) + 1
     meanr = ranks.mean() + 1
-    mean_rougel_ndcg = np.mean(rougel_ndcgs)
-    mean_spice_ndcg = np.mean(spice_ndcgs)
+    mean_rougel_ndcg = 0
+    mean_spice_ndcg = 0
 
     if return_ranks:
         return (r1, r5, r10, medr, meanr, mean_rougel_ndcg, mean_spice_ndcg), (ranks, top50)

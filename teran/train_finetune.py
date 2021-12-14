@@ -222,7 +222,7 @@ def main():
                               collate_fn=val_collate)
 
     # load the ndcg scorer
-    ndcg_val_scorer = DCG(config, len(val_loader.dataset), 'val', rank=25, relevance_methods=['rougeL', 'spice'])
+    ndcg_val_scorer = None # DCG(config, len(val_loader.dataset), 'val', rank=25, relevance_methods=['rougeL', 'spice'])
     # ndcg_test_scorer = DCG(config, len(test_loader.dataset), 'test', rank=25, relevance_methods=['rougeL', 'spice'])
 
     # ------------------------------------------------------------------------------------------------------------------

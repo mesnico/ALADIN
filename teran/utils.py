@@ -20,7 +20,7 @@ class DepthAggregatorModel(nn.Module):
         if self.aggr is None:
             out = x[-1, :, :, :]    # takes the tokens from the last layer
         elif self.aggr == 'mean':
-            out = x[:, :, 0, :].mean(dim=0) # simply average over the depth dimension
+            out = x.mean(dim=0) # simply average over the depth dimension
         elif self.aggr == 'gated':
             mask = mask.unsqueeze(1).expand(-1, x.shape[0], -1)
             mask = mask.reshape(-1, mask.shape[2])

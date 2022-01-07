@@ -95,7 +95,6 @@ class RetrievalDataset(Dataset):
                     self.caption_indexs = {k: json.loads(self.caption_indexs[k]) for k in self.img_keys}
             else:
                 self.has_caption_indexs = False
-        self.is_train = is_train
         self.output_mode = args.output_mode
         self.tokenizer = tokenizer
         self.max_seq_len = args.max_seq_length
@@ -325,8 +324,6 @@ class RetrievalDataset(Dataset):
         return t_features
 
     def __len__(self):
-        if not self.is_train and self.args.cross_image_eval:
-            return len(self.img_keys) ** 2 * self.num_captions_per_img
         return len(self.img_keys) * self.num_captions_per_img
 
 

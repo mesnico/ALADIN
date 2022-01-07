@@ -426,7 +426,7 @@ class DistillationLoss(nn.Module):
 
         elif self.mode == 'listnet':
             eps = 1e-10
-            temperature = 4.0
+            temperature = 6.0
 
             # sentence retrieval
             preds_smax = F.softmax(student_scores * temperature, dim=1)

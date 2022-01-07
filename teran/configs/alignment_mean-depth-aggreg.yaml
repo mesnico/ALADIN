@@ -40,17 +40,17 @@ model:
   image-aggregation: 'first'
   teran-layers: 0
   tern-layers: 1
-  post-layers: 1
+  post-layers: 0
   exclude-stopwords: False
   shared-transformer: True
-  depth-aggregation: 'gated' # 'gated', 'mean' or null
+  depth-aggregation: 'mean' # 'gated', 'mean' or null
   dropout: 0.1
 
 training:
   lr: 0.00001  # 0.000006
   grad-clip: 2.0
   max-violation: True
-  loss-type: 'alignment-distillation' # 'selfaggregation-entropy' #'distillation'
+  loss-type: 'alignment' # 'selfaggregation-entropy' #'distillation'
   loss-weights: 'auto'
   alignment-mode: 'MrSw'
   distillation-mode: 'listnet'

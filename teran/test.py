@@ -138,30 +138,14 @@ def main():
     #                     help='path to datasets')
     # parser.add_argument('--data_name', default='precomp',
     #                     help='{coco,f8k,f30k,10crop}_precomp|coco|f8k|f30k')
-    parser.add_argument('--num_epochs', default=30, type=int,
-                        help='Number of training epochs.')
     # parser.add_argument('--crop_size', default=224, type=int,
     #                     help='Size of an image crop as the CNN input.')
-    parser.add_argument('--lr_update', default=15, type=int,
-                        help='Number of epochs to update the learning rate.')
     # parser.add_argument('--workers', default=10, type=int,
     #                     help='Number of data loader workers.')
-    parser.add_argument('--log_step', default=10, type=int,
-                        help='Number of steps to print and record the log.')
-    parser.add_argument('--val_step', default=500, type=int,
-                        help='Number of steps to run validation.')
-    parser.add_argument('--test_step', default=100000000, type=int,
-                        help='Number of steps to run validation.')
-    parser.add_argument('--logger_name', default='runs/runX',
-                        help='Path to save the model and Tensorboard log.')
-    parser.add_argument('--resume', default='', type=str, metavar='PATH',
-                        help='path to latest checkpoint (default: none). Loads model, optimizer, scheduler')
-    parser.add_argument('--load-teacher-model', default='', type=str, metavar='PATH',
+    parser.add_argument('--load_checkpoint', default='', type=str, metavar='PATH',
                         help='path to latest checkpoint (default: none). Loads only the model')
     parser.add_argument('--use_restval', action='store_true',
                         help='Use the restval data for training on MSCOCO.')
-    parser.add_argument('--reinitialize-scheduler', action='store_true',
-                        help='Reinitialize scheduler. To use with --resume')
     parser.add_argument('--config', type=str, help="Which configuration to use. See into 'config' folder")
 
 
@@ -173,18 +157,27 @@ def main():
     #     torch.cuda.set_limit_lms(11000 * 1024 * 1024)
     #     print('[LMS=On limit=' + str(torch.cuda.get_limit_lms()) + ']')
 
-    with open(args.config, 'r') as ymlfile:
-        config = yaml.load(ymlfile)
+    # with open(args.config, 'r') as ymlfile:
+    #     config = yaml.load(ymlfile)
 
-    distillation_on = 'distillation' in config['training']['loss-type']
+    # check if checkpoint exists
+    filename = args.load_checkpoint
+    if os.path.isfile(filename):
+        print("=> loading checkpoint '{}'".format(filename))
+        loaded_checkpoint = torch.load(filename, map_location='cpu')
+    else:
+        raise FileNotFoundError("=> no checkpoint found at '{}'".format(args.resume))
+
+    config = loaded_checkpoint['config']
     args.per_gpu_train_batch_size = config['training']['bs']
     args.per_gpu_eval_batch_size = config['training']['bs']
+
+    # override loss-type
+    config['training']['loss-type'] = 'alignment-distillation'
 
     logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
     global logger
     logger = setup_logger("vlpretrain", None, 0)
-
-    tb_logger = SummaryWriter(log_dir=args.logger_name, comment='')
 
 
     assert not ((config['image-model']['fine-tune'] or config['text-model']['fine-tune']) and config['dataset'][
@@ -210,16 +203,11 @@ def main():
     config_class, tokenizer_class = BertConfig, BertTokenizer
     tokenizer = tokenizer_class.from_pretrained(oscar_checkpoint)
 
-    train_dataset = RetrievalDataset(tokenizer, args, 'train', is_train=True)
-    train_collate = MyCollate(dataset=train_dataset, return_oscar_data=distillation_on)
-    train_loader = DataLoader(train_dataset, shuffle=True,
-                              batch_size=config['training']['bs'], num_workers=args.num_workers, collate_fn=train_collate)
-
-    val_dataset = RetrievalDataset(tokenizer, args, 'minival', is_train=True)
-    val_collate = MyCollate(dataset=val_dataset, return_oscar_data=False)
-    val_loader = DataLoader(val_dataset, shuffle=False,
+    test_dataset = RetrievalDataset(tokenizer, args, 'test', is_train=False)
+    test_collate = MyCollate(dataset=test_dataset, return_oscar_data=False)
+    test_loader = DataLoader(test_dataset, shuffle=False,
                               batch_size=config['training']['bs'], num_workers=args.num_workers,
-                              collate_fn=val_collate)
+                              collate_fn=test_collate)
 
     # load the ndcg scorer
     ndcg_val_scorer = None # DCG(config, len(val_loader.dataset), 'val', rank=25, relevance_methods=['rougeL', 'spice'])
@@ -248,252 +236,32 @@ def main():
 
     # Construct the student model
     student_model = TERANStudent(config, oscar_checkpoint)
+
+    # resume from a checkpoint
+    student_model.load_state_dict(loaded_checkpoint['model'], strict=True)
     if torch.cuda.is_available():
         student_model.cuda()
+    print('Model checkpoint loaded!')
 
-    optimizer = torch.optim.Adam(student_model.parameters(), lr=config['training']['lr'])
-
-    # LR scheduler
-    scheduler_name = config['training']['scheduler']
-    if scheduler_name == 'steplr':
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, config['training']['step-size'],
-                                                    gamma=config['training']['gamma'])
-    elif scheduler_name is None:
-        scheduler = None
-    else:
-        raise ValueError('{} scheduler is not available'.format(scheduler_name))
-
-    # Warmup scheduler
-    warmup_scheduler_name = config['training']['warmup'] if not args.resume else None
-    if warmup_scheduler_name == 'linear':
-        warmup_scheduler = warmup.LinearWarmup(optimizer, warmup_period=config['training']['warmup-period'])
-    elif warmup_scheduler_name is None:
-        warmup_scheduler = None
-    else:
-        raise ValueError('{} warmup scheduler is not available'.format(warmup_scheduler_name))
-
-    # optionally resume from a checkpoint
-    start_epoch = 0
-    if args.resume or args.load_teacher_model:
-        filename = args.resume if args.resume else args.load_teacher_model
-        if os.path.isfile(filename):
-            print("=> loading checkpoint '{}'".format(filename))
-            oscar_checkpoint = torch.load(filename, map_location='cpu')
-            student_model.load_state_dict(oscar_checkpoint['model'], strict=False if args.load_teacher_model else True)
-            if torch.cuda.is_available():
-                student_model.cuda()
-            print('Student model loaded!')
-            if args.resume:
-                start_epoch = oscar_checkpoint['epoch']
-                # best_rsum = checkpoint['best_rsum']
-                optimizer.load_state_dict(oscar_checkpoint['optimizer'])
-                if oscar_checkpoint['scheduler'] is not None and not args.reinitialize_scheduler:
-                    scheduler.load_state_dict(oscar_checkpoint['scheduler'])
-                # Eiters is used to show logs as the continuation of another
-                # training
-                student_model.Eiters = oscar_checkpoint['Eiters']
-                print("=> loaded checkpoint '{}' (epoch {})"
-                      .format(args.resume, start_epoch))
-            else:
-                print("=> loaded only model from checkpoint '{}'"
-                      .format(args.load_teacher_model))
-        else:
-            print("=> no checkpoint found at '{}'".format(args.resume))
-
-    for epoch in range(start_epoch, args.num_epochs):
-        # train for one epoch
-        train(args, config, train_loader, student_model, optimizer, epoch, tb_logger, val_loader, None,
-              measure=config['training']['measure'], grad_clip=config['training']['grad-clip'],
-              scheduler=scheduler, warmup_scheduler=warmup_scheduler, ndcg_val_scorer=ndcg_val_scorer,
-              ndcg_test_scorer=None, alignment_mode=alignment_mode, loss_type=loss_type)
-
-        # evaluate on validation set
-        rsum, ndcg_sum = validate(val_loader, student_model, tb_logger, measure=config['training']['measure'],
-                                  log_step=args.log_step,
-                                  ndcg_scorer=ndcg_val_scorer, alignment_mode=alignment_mode, loss_type=loss_type)
-
-        # remember best R@ sum and save checkpoint
-        is_best_rsum = rsum > best_rsum
-        best_rsum = max(rsum, best_rsum)
-
-        is_best_ndcg = False # ndcg_sum > best_ndcg_sum
-        best_ndcg_sum = max(ndcg_sum, best_ndcg_sum)
-        #
-        # is_best_r1 = r1 > best_r1
-        # best_r1 = max(r1, best_r1)
-
-        # is_best_val_loss = val_loss < best_val_loss
-        # best_val_loss = min(val_loss, best_val_loss)
-
-        save_checkpoint({
-            'epoch': epoch + 1,
-            'model': student_model.state_dict(),
-            'optimizer': optimizer.state_dict(),
-            'scheduler': scheduler.state_dict() if scheduler is not None else None,
-            'opt': args,
-            'config': config,
-            'Eiters': student_model.Eiters,
-        }, is_best_rsum, is_best_ndcg, prefix=args.logger_name + '/')
+    test(test_loader, student_model, alignment_mode=alignment_mode)
 
 
-def get_teacher_scores(args, model, batch, subdivs=40):
-    batch = tuple(t.to(args.device) for t in batch)
-    side_size = int(math.sqrt(len(batch[0])))
-    assert side_size**2 == len(batch[0])
-    results = []
-    attentions = []
-    with torch.no_grad():
-        # Iterate a number of iterations where each batch is composed of subdivs samples. This is for preventing memory explosion
-        iterations = (len(batch[0]) // subdivs) + 1
-        for it in range(iterations):
-            b = it * subdivs
-            if b == len(batch[0]):
-                # prevent batch size == 0
-                break
-            e = (it + 1) * subdivs
-            inputs = {
-                'input_ids': batch[0][b:e],
-                'attention_mask': batch[1][b:e],
-                'token_type_ids': batch[2][b:e],
-                'img_feats': batch[3][b:e],
-                'labels': batch[4][b:e]
-            }
-            _, logits, attention = model(**inputs)[:3]
-            if args.num_labels == 2:
-                probs = F.softmax(logits)
-                result = probs[:, 1]  # the confidence to be a matched pair
-            else:
-                result = logits
-
-            # accumulate results
-            results.append(result)
-
-            # accumulate attentions
-            attention = attention[-1].mean(
-                dim=1)  # attentions from the last layer, mean over all the heads: B x (70+70) x (70+70)
-            # take only the distribution of every text over the image regions
-            attention = attention[:, 1:70, 70:]    # B x 69 x 70
-            attentions.append(attention)
-
-        results = torch.cat(results, dim=0)
-        scores = results.view(side_size, side_size) # B x B matrix of scores
-
-        attentions = torch.cat(attentions, dim=0)
-        attentions = attentions.view(side_size, side_size, attentions.shape[1], attentions.shape[2])
-        return scores, attentions
-        # result = [_.to(torch.device("cpu")) for _ in result]
-
-
-def train(opt, config, train_loader, student_model, optimizer, epoch, tb_logger, val_loader, test_loader, measure='cosine', grad_clip=-1, scheduler=None, warmup_scheduler=None, ndcg_val_scorer=None, ndcg_test_scorer=None, alignment_mode=None, loss_type=None):
-    global best_rsum
-
-    # average meters to record the training statistics
-    batch_time = AverageMeter()
-    data_time = AverageMeter()
-    train_logger = LogCollector()
-
-    end = time.time()
-    for i, train_data in enumerate(train_loader):
-        student_model.train()
-        if scheduler is not None:
-            scheduler.step(epoch)
-
-        if warmup_scheduler is not None:
-            warmup_scheduler.dampen()
-
-        optimizer.zero_grad()
-
-        # measure data loading time
-        data_time.update(time.time() - end)
-
-        # make sure train logger is used
-        student_model.logger = train_logger
-
-        example_imgs, example_txts = train_data
-        loss, loss_dict = student_model(example_imgs, example_txts, epoch=epoch, distill_epoch=1)
-        # loss = sum(loss for loss in loss_dict.values())
-
-        # compute gradient and do SGD step
-        loss.backward()
-        if grad_clip > 0:
-            torch.nn.utils.clip_grad.clip_grad_norm_(student_model.parameters(), grad_clip)
-        optimizer.step()
-
-        # measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
-
-        # Print log info
-        if student_model.Eiters % opt.log_step == 0:
-            logging.info(
-                'Epoch: [{0}][{1}/{2}]\t'
-                '{e_log}\t'
-                'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                .format(
-                    epoch, i, len(train_loader), batch_time=batch_time,
-                    data_time=data_time, e_log=str(student_model.logger)))
-
-        # Record logs in tensorboard
-        tb_logger.add_scalar('epoch', epoch, student_model.Eiters)
-        tb_logger.add_scalar('step', i, student_model.Eiters)
-        tb_logger.add_scalar('batch_time', batch_time.val, student_model.Eiters)
-        tb_logger.add_scalar('data_time', data_time.val, student_model.Eiters)
-        tb_logger.add_scalar('lr', optimizer.param_groups[0]['lr'], student_model.Eiters)
-        student_model.logger.tb_log(tb_logger, step=student_model.Eiters)
-
-        del train_data
-        if i % 10 == 0:
-            torch.cuda.empty_cache()
-
-        # validate at every val_step
-        if student_model.Eiters % opt.val_step == 0:
-            rsum, _ = validate(val_loader, student_model, tb_logger, measure=measure, log_step=opt.log_step, ndcg_scorer=ndcg_val_scorer, alignment_mode=alignment_mode, loss_type=loss_type)
-
-            is_best_rsum = rsum > best_rsum
-            best_rsum = max(rsum, best_rsum)
-
-            save_checkpoint({
-                'epoch': epoch + 1,
-                'model': student_model.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'scheduler': scheduler.state_dict() if scheduler is not None else None,
-                'opt': opt,
-                'config': config,
-                'Eiters': student_model.Eiters,
-            }, is_best_rsum, False, prefix=opt.logger_name + '/')
-
-        # if model.Eiters % opt.test_step == 0:
-        #     test(test_loader, model, tb_logger, measure=measure, log_step=opt.log_step, ndcg_scorer=ndcg_test_scorer)
-
-
-def validate(val_loader, model, tb_logger, measure='cosine', log_step=10, ndcg_scorer=None, alignment_mode=None, auxiliary_evaluation=True, loss_type=None):
+def test(test_loader, model, measure='cosine', log_step=10, ndcg_scorer=None, alignment_mode=None, auxiliary_evaluation=True):
     # compute the encoding for all the validation images and captions
     img_embs, cap_embs, img_lenghts, cap_lenghts = encode_data(
-        model, val_loader, log_step, logging.info)
+        model, test_loader, log_step, logging.info)
 
     # initialize similarity matrix evaluator
-    if 'alignment' in loss_type:
-        sim_matrix_class = AlignmentContrastiveLoss(aggregation=alignment_mode)
-        def alignment_sim_fn(img, cap, img_len, cap_len):
-            with torch.no_grad():
-                scores = sim_matrix_class(img, cap, img_len, cap_len, return_loss=False, return_similarity_mat=True)
-            return scores
-        sim_matrix_fn = alignment_sim_fn
-    elif loss_type == 'crossattention-all2all':
-        def cross_att_sim_fn(img, cap, img_len, cap_len):
-            with torch.no_grad():
-                scores = model.cross_attention_aggregation_all2all(img, cap, img_len, cap_len,
-                                                           return_similarity_mat=True)
-            return scores
-
-        sim_matrix_fn = cross_att_sim_fn
-    else:
-        sim_matrix_fn = None
+    sim_matrix_class = AlignmentContrastiveLoss(aggregation=alignment_mode)
+    def alignment_sim_fn(img, cap, img_len, cap_len):
+        with torch.no_grad():
+            scores = sim_matrix_class(img, cap, img_len, cap_len, return_loss=False, return_similarity_mat=True)
+        return scores
+    sim_matrix_fn = alignment_sim_fn
 
     if auxiliary_evaluation:
         print('Evaluating with the auxiliary recall function...')
-        r1_aux, r5_aux, r10_aux, r1i_aux, r5i_aux, r10i_aux, rsum_aux = recall_1k_test(img_embs[:, 0, :], cap_embs[:, 0, :])
+        recall_1k_test(img_embs[:, 0, :], cap_embs[:, 0, :])
 
     print('Evaluating with the primary evaluation code...')
     # caption retrieval
@@ -509,22 +277,6 @@ def validate(val_loader, model, tb_logger, measure='cosine', log_step=10, ndcg_s
     # sum of recalls to be used for early stopping
     currscore = r1 + r5 + r10 + r1i + r5i + r10i
     spice_ndcg_sum = mean_spice_ndcg + mean_spice_ndcg_i
-
-    # record metrics in tensorboard
-    tb_logger.add_scalars('r1', {'tern': r1_aux, 'teran': r1}, model.Eiters)
-    tb_logger.add_scalars('r5', {'tern': r5_aux, 'teran': r5}, model.Eiters)
-    tb_logger.add_scalars('r10', {'tern': r10_aux, 'teran': r10}, model.Eiters)
-    tb_logger.add_scalars('mean_ndcg', {'rougeL': mean_rougel_ndcg, 'spice': mean_spice_ndcg}, model.Eiters)
-    tb_logger.add_scalar('medr', medr, model.Eiters)
-    tb_logger.add_scalar('meanr', meanr, model.Eiters)
-    tb_logger.add_scalars('r1i', {'tern': r1i_aux, 'teran': r1i}, model.Eiters)
-    tb_logger.add_scalars('r5i', {'tern': r5i_aux, 'teran': r5i}, model.Eiters)
-    tb_logger.add_scalars('r10i', {'tern': r10i_aux, 'teran': r10i}, model.Eiters)
-    tb_logger.add_scalars('mean_ndcg_i', {'rougeL': mean_rougel_ndcg_i, 'spice': mean_spice_ndcg_i}, model.Eiters)
-    tb_logger.add_scalar('medri', medri, model.Eiters)
-    tb_logger.add_scalar('meanr', meanr, model.Eiters)
-    tb_logger.add_scalars('rsum', {'tern': rsum_aux, 'teran': currscore}, model.Eiters)
-    tb_logger.add_scalar('spice_ndcg_sum', spice_ndcg_sum, model.Eiters)
 
     return currscore, spice_ndcg_sum
 
@@ -545,13 +297,6 @@ def restore_training_settings(args):
                     test_v, train_v))
                 setattr(args, param, train_v)
     return args
-
-def save_checkpoint(state, is_best_rsum, is_best_ndcg, filename='checkpoint.pth.tar', prefix=''):
-    torch.save(state, prefix + filename)
-    if is_best_rsum:
-        shutil.copyfile(prefix + filename, prefix + 'model_best_rsum.pth.tar')
-    if is_best_ndcg:
-        shutil.copyfile(prefix + filename, prefix + 'model_best_ndcgspice.pth.tar')
 
 if __name__ == "__main__":
     main()

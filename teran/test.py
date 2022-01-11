@@ -203,7 +203,10 @@ def main():
     config_class, tokenizer_class = BertConfig, BertTokenizer
     tokenizer = tokenizer_class.from_pretrained(oscar_checkpoint)
 
-    test_dataset = RetrievalDataset(tokenizer, args, 'test', is_train=False)
+    split = 'test' #'minival'
+    is_train = False #True
+
+    test_dataset = RetrievalDataset(tokenizer, args, split, is_train=is_train)
     test_collate = MyCollate(dataset=test_dataset, return_oscar_data=False)
     test_loader = DataLoader(test_dataset, shuffle=False,
                               batch_size=config['training']['bs'], num_workers=args.num_workers,
@@ -270,7 +273,7 @@ def test(test_loader, model, measure='cosine', log_step=10, ndcg_scorer=None, al
                  (r1, r5, r10, medr, meanr, mean_rougel_ndcg, mean_spice_ndcg))
     # image retrieval
     (r1i, r5i, r10i, medri, meanr, mean_rougel_ndcg_i, mean_spice_ndcg_i) = t2i(
-        img_embs, cap_embs, img_lenghts, cap_lenghts, ndcg_scorer=ndcg_scorer, measure=measure, sim_function=sim_matrix_fn, im_batches=1)
+        img_embs, cap_embs, img_lenghts, cap_lenghts, ndcg_scorer=ndcg_scorer, measure=measure, sim_function=sim_matrix_fn, im_batches=5)
 
     logging.info("Text to image: %.1f, %.1f, %.1f, %.1f, %.1f, ndcg_rouge=%.4f ndcg_spice=%.4f" %
                  (r1i, r5i, r10i, medri, meanr, mean_rougel_ndcg_i, mean_spice_ndcg_i))

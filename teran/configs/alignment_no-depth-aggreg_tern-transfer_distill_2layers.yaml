@@ -40,11 +40,11 @@ model:
   image-aggregation: 'first'
   freeze-teran: True
   teran-layers: 0
-  tern-layers: 1
+  tern-layers: 2
   post-layers: 0
   exclude-stopwords: False
   shared-transformer: True
-  depth-aggregation: null # 'gated', 'mean' or null
+  depth-aggregation: 'gated' # 'gated', 'mean' or null
   dropout: 0.1
 
 training:

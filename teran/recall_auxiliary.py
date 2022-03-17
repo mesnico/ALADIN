@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from tqdm import tqdm
+from tqdm import tqdm, trange
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # image: 5000 x 1024
@@ -31,7 +31,7 @@ def recall(images, captions, model, mode='i2t', lenghts=None, return_ranks=False
         # questo perchè il modello con prima func attention non ha il for sul batch -> devo fare similarity con tutte images
         # d_arr = model.similarity(images, caps, lenghts).cpu().detach().numpy()
         # d_arr = d_arr[indexes[:-1].cpu()]  # poi tolgo quelle ripetute (le stesse immagini)
-        for img in range(npts):
+        for img in trange(npts):
             d = d_arr[img].flatten()
             inds = np.argsort(d)[::-1]  # indexes that sort similarities from largest to smallest
             # find the best rank position among the 5 captions ground-truth of the image
@@ -45,7 +45,7 @@ def recall(images, captions, model, mode='i2t', lenghts=None, return_ranks=False
             # array with most similar caption retrieved for index image
             top1[img] = inds[0]
     elif mode is 't2i':
-        for img in range(npts):
+        for img in trange(npts):
             # Get query captions
             caps = captions[indexes[img]:indexes[img+1]]
             d = ims.mm(caps.t()).cpu().numpy().T

@@ -43,7 +43,8 @@ model:
   post-layers: 0
   exclude-stopwords: False
   shared-transformer: True
-  depth-aggregation: 'gated' # 'gated', 'mean' or null
+  depth-aggregation-alignment: 'gated' # 'gated', 'mean' or null
+  depth-aggregation-matching: False
   dropout: 0.1
 
 training:

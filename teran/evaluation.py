@@ -102,7 +102,7 @@ def encode_data(model, data_loader, log_step=10, logging=print):
     #     max_img_len = max(max_img_len, max(img_length))
 
     ids_pointer = 0
-    for i, batch_data in enumerate(data_loader):
+    for i, batch_data in enumerate(tqdm.tqdm(data_loader)):
         example_imgs, example_txts = batch_data
 
         # make sure val logger is used

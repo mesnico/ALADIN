@@ -5,9 +5,9 @@ from torch import nn, nn as nn
 
 
 class DepthAggregatorModel(nn.Module):
-    def __init__(self, config, input_dim=1024):
+    def __init__(self, aggr_type, input_dim=1024):
         super().__init__()
-        self.aggr = config['model']['depth-aggregation']
+        self.aggr = aggr_type
         if self.aggr == 'gated':
             self.self_attn = nn.MultiheadAttention(input_dim, num_heads=4, dropout=0.1)
             self.gate_ffn = nn.Linear(input_dim, 1)
@@ -212,3 +212,28 @@ def generate_square_subsequent_mask(sz):
     mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
     mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
     return mask
+
+
+class FeatureFusionModel(nn.Module):
+    def __init__(self, mode, feat_dim):
+        super().__init__()
+        self.mode = mode
+        if mode == 'concat':
+            pass #TODO
+        elif mode == 'weighted':
+            self.alphas = nn.Sequential(
+                nn.Linear(feat_dim * 2, 512),
+                nn.ReLU(),
+                nn.Dropout(p=0.1),
+                nn.Linear(512, 2))
+
+    def forward(self, feat_1, feat_2):
+        assert feat_1.shape == feat_2.shape
+        b, s, d = feat_1.shape
+        feat_1 = feat_1.view(-1, d)
+        feat_2 = feat_2.view(-1, d)
+        concat_feat = torch.cat([feat_1, feat_2], dim=1)
+        alphas = torch.sigmoid(self.alphas(concat_feat))    # B x 2
+        out_feat = feat_1 * alphas[:, 0].unsqueeze(1) + feat_2 * alphas[:, 1].unsqueeze(1)
+        out_feat = out_feat.view(b, s, d)
+        return out_feat

@@ -9,7 +9,8 @@ from teran.loss import ContrastiveLoss, AlignmentContrastiveLoss, DistillationLo
 from oscar.modeling.modeling_bert import ImageBertForSequenceClassification
 from transformers.pytorch_transformers import BertTokenizer, BertConfig
 
-from .utils import l2norm,  Aggregator, DepthAggregatorModel
+from .utils import l2norm, Aggregator, DepthAggregatorModel, FeatureFusionModel
+
 # from nltk.corpus import stopwords, words as nltk_words
 
 
@@ -60,9 +61,14 @@ class JointTextImageTransformerEncoder(nn.Module):
         self.cap_proj = nn.Linear(hidden_size, embed_size)
         self.embed_size = embed_size
         self.shared_transformer = config['model']['shared-transformer']
-        self.depth_aggregation = config['model']['depth-aggregation'] if 'depth-aggregation' in config['model'] else False
-        if self.depth_aggregation:
-            self.depth_aggregator_model = DepthAggregatorModel(config, input_dim=embed_size)
+        self.depth_aggregation_matching = config['model']['depth-aggregation-matching'] if 'depth-aggregation-matching' in config['model'] else config['model']['depth-aggregation'] if 'depth-aggregation' in config['model'] else False
+        self.depth_aggregation_alignment = config['model'][
+            'depth-aggregation-alignment'] if 'depth-aggregation-alignment' in config['model'] else False
+        if self.depth_aggregation_matching:
+            self.depth_aggregator_model_matching = DepthAggregatorModel(self.depth_aggregation_matching, input_dim=embed_size)
+        if self.depth_aggregation_alignment:
+            self.depth_aggregator_model_alignment = DepthAggregatorModel(self.depth_aggregation_alignment, input_dim=embed_size)
+            self.feature_fusion = FeatureFusionModel(mode='weighted', feat_dim=embed_size)
         self.loss_type = config['training']['loss-type']
         self.text_aggregation_type = config['model']['text-aggregation']
         self.img_aggregation_type = config['model']['image-aggregation']
@@ -93,7 +99,7 @@ class JointTextImageTransformerEncoder(nn.Module):
                                                                  dropout=dropout)
                 self.transformer_encoder_2 = nn.TransformerEncoder(transformer_layer_2,
                                                                    num_layers=teran_layers)
-        if self.depth_aggregation is not None and self.depth_aggregation == 'transformer':
+        if self.depth_aggregation_matching is not None and self.depth_aggregation_matching == 'transformer':
             depth_transformer_layer = nn.TransformerEncoderLayer(d_model=hidden_size, nhead=4, dim_feedforward=hidden_size, dropout=dropout)
             self.depth_transformer = nn.TransformerEncoder(depth_transformer_layer, num_layers=1)
 
@@ -159,10 +165,21 @@ class JointTextImageTransformerEncoder(nn.Module):
             for m, v_len in zip(img_mask, feat_len):
                 m[v_len:] = True
 
-        c_emb_teran = txt_bert_output[0][:, :max_cap_len].permute(1, 0, 2)
-        i_emb_teran = img_bert_output[0][:, max_language_token_len:max_language_token_len + max_img_len].permute(1, 0, 2)
+            if self.depth_aggregation_alignment:
+                hidden_states_img = torch.stack(img_bert_output[2], dim=0)  # depth x B x N x dim
+                hidden_states_img = hidden_states_img[:, :, max_language_token_len:max_language_token_len + max_img_len, :]
+                i_hidden_states = self.depth_aggregator_model_alignment(hidden_states_img[:-1], img_mask)
+                i_emb_teran = self.feature_fusion(i_hidden_states, hidden_states_img[-1].contiguous()).permute(1, 0, 2) # S x B x dim
 
-        if self.depth_aggregation:
+                hidden_states_txt = torch.stack(txt_bert_output[2], dim=0)
+                hidden_states_txt = hidden_states_txt[:, :, :max_cap_len, :]
+                c_hidden_states = self.depth_aggregator_model_alignment(hidden_states_txt[:-1], txt_mask)
+                c_emb_teran = self.feature_fusion(c_hidden_states, hidden_states_txt[-1].contiguous()).permute(1, 0, 2) # S x B x dim
+            else:
+                c_emb_teran = txt_bert_output[0][:, :max_cap_len].permute(1, 0, 2)
+                i_emb_teran = img_bert_output[0][:, max_language_token_len:max_language_token_len + max_img_len].permute(1, 0, 2)
+
+        if self.depth_aggregation_matching:
             # only for TERN
             hidden_states_img = torch.stack(img_bert_output[2], dim=0)   # depth x B x N x dim
             hidden_states_img = hidden_states_img[:, :, max_language_token_len:max_language_token_len + max_img_len, :]
@@ -170,7 +187,7 @@ class JointTextImageTransformerEncoder(nn.Module):
                 last_img_tokens = img_bert_output[0][:, max_language_token_len:max_language_token_len + max_img_len]
                 last_img_tokens = self.post_oscar_transformer(last_img_tokens.permute(1, 0, 2), src_key_padding_mask=img_mask).permute(1, 0, 2)
                 hidden_states_img = torch.cat([hidden_states_img, last_img_tokens.unsqueeze(0)], dim=0)  # depth+1 x B x S x dim
-            i_emb = self.depth_aggregator_model(hidden_states_img, img_mask).permute(1, 0, 2)    # S x B x dim
+            i_emb = self.depth_aggregator_model_matching(hidden_states_img, img_mask).permute(1, 0, 2)    # S x B x dim
 
             hidden_states_txt = torch.stack(txt_bert_output[2], dim=0)
             hidden_states_txt = hidden_states_txt[:, :, :max_cap_len, :]
@@ -178,7 +195,7 @@ class JointTextImageTransformerEncoder(nn.Module):
                 last_txt_tokens = txt_bert_output[0][:, :max_cap_len]
                 last_txt_tokens = self.post_oscar_transformer(last_txt_tokens.permute(1, 0, 2), src_key_padding_mask=txt_mask).permute(1, 0, 2)
                 hidden_states_txt = torch.cat([hidden_states_txt, last_txt_tokens.unsqueeze(0)], dim=0)  # depth+1 x B x S x dim
-            c_emb = self.depth_aggregator_model(hidden_states_txt, txt_mask).permute(1, 0, 2)   # S x B x dim
+            c_emb = self.depth_aggregator_model_matching(hidden_states_txt, txt_mask).permute(1, 0, 2)   # S x B x dim
         else:
             c_emb = c_emb_teran
             i_emb = i_emb_teran

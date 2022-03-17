@@ -23,7 +23,7 @@ The object tags are from:
 
 ## Pre-exacted Image Features
 For ease-of-use, we make pretrained features available for all pretraining datasets and downstream tasks. 
-Features are stored in tsv (tab-separated-values) format that can be used in [pretraining](oscar/datasets/oscar_tsv.py) and dowstream tasks like [COCO Image-Text Retrieval](oscar/run_retrieval.py).
+Features are stored in tsv (tab-separated-values) format that can be used in [pretraining](datasets/oscar_tsv.py) and dowstream tasks like [COCO Image-Text Retrieval](run_retrieval.py).
 
 Notice that all the links below are links to a folder. We recommend using the following AzCopy command to download.
 ```
@@ -50,7 +50,7 @@ path/to/azcopy copy <folder-link> <target-address> --recursive
 
 
 ## Oscar+ pretraining corpus
-<img src="docs/pretrain_corpus.PNG" width="650"> 
+<img src="../docs/pretrain_corpus.PNG" width="650"> 
 
 [Small corpus](https://biglmdiag.blob.core.windows.net/vinvl/pretrain_corpus/coco_flickr30k_gqa.tsv)
 

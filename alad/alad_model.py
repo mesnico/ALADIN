@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 
-from teran.loss import ContrastiveLoss, AlignmentContrastiveLoss, DistillationLoss, \
+from alad.loss import ContrastiveLoss, AlignmentContrastiveLoss, DistillationLoss, \
     AttentionDistillationLoss
 from oscar.modeling.modeling_bert import ImageBertForSequenceClassification
 from transformers.pytorch_transformers import BertTokenizer, BertConfig
@@ -252,7 +252,7 @@ class JointTextImageTransformerEncoder(nn.Module):
         return cross_attention_image, cross_attention_caption, set_image_embeddings, set_caption_embeddings, feat_len, cap_len, l1_regul_loss
 
 
-class TERANStudent(torch.nn.Module):
+class ALADModel(torch.nn.Module):
     """
     rkiros/uvs model
     """

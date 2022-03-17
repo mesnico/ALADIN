@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 from tqdm import tqdm
 
-from teran.dataset import RetrievalDataset, MyCollate
+from alad.dataset import RetrievalDataset, MyCollate
 import yaml
 import time
 
@@ -19,12 +19,12 @@ from oscar.utils.logger import setup_logger
 from oscar.utils.misc import mkdir, set_seed
 from transformers.pytorch_transformers import BertTokenizer, BertConfig
 
-from teran.loss import AlignmentContrastiveLoss
-from teran.teran_student import TERANStudent
-from teran.recall_auxiliary import recall_1k_test
+from alad.loss import AlignmentContrastiveLoss
+from alad.alad_model import ALADModel
+from alad.recall_auxiliary import recall_1k_test
 # from utils import get_model, cosine_sim, dot_sim
-from teran.evaluation import i2t, t2i, AverageMeter, LogCollector, encode_data
-from teran.evaluate_utils.dcg import DCG
+from alad.evaluation import i2t, t2i, AverageMeter, LogCollector, encode_data
+from alad.evaluate_utils.dcg import DCG
 # from teran import data
 
 import logging
@@ -238,7 +238,7 @@ def main():
     # logger.info("Evaluate the following checkpoint: %s", checkpoint)
 
     # Construct the student model
-    student_model = TERANStudent(config, oscar_checkpoint)
+    student_model = ALADModel(config, oscar_checkpoint)
 
     # resume from a checkpoint
     student_model.load_state_dict(loaded_checkpoint['model'], strict=True)

@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from torch import nn as nn
 from torchvision import models as models
-from teran.utils import PositionalEncodingImageBoxes, l2norm
+from alad.utils import PositionalEncodingImageBoxes, l2norm
 
 
 def EncoderImage(config):

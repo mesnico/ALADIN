@@ -15,8 +15,8 @@ from collections import OrderedDict
 
 # from recall_auxiliary import recall_1k_5fold_test
 # from utils import dot_sim, get_model, ImageDetectionsField
-from teran.evaluate_utils.dcg import DCG
-from teran.loss import order_sim, AlignmentContrastiveLoss
+from alad.evaluate_utils.dcg import DCG
+from alad.loss import order_sim, AlignmentContrastiveLoss
 
 
 class AverageMeter(object):

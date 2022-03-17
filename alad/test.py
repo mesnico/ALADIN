@@ -21,7 +21,7 @@ from transformers.pytorch_transformers import BertTokenizer, BertConfig
 
 from alad.loss import AlignmentContrastiveLoss
 from alad.alad_model import ALADModel
-from alad.recall_auxiliary import recall_1k_test
+from alad.recall_auxiliary import compute_recall
 # from utils import get_model, cosine_sim, dot_sim
 from alad.evaluation import i2t, t2i, AverageMeter, LogCollector, encode_data
 from alad.evaluate_utils.dcg import DCG
@@ -264,7 +264,7 @@ def test(test_loader, model, measure='cosine', log_step=10, ndcg_scorer=None, al
 
     if auxiliary_evaluation:
         print('Evaluating with the auxiliary recall function...')
-        recall_1k_test(img_embs[:, 0, :], cap_embs[:, 0, :])
+        compute_recall(img_embs[:, 0, :], cap_embs[:, 0, :])
 
     print('Evaluating with the primary evaluation code...')
     # caption retrieval

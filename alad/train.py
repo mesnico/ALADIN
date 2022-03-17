@@ -21,7 +21,7 @@ from transformers.pytorch_transformers import BertTokenizer, BertConfig
 
 from alad.loss import AlignmentContrastiveLoss
 from alad.alad_model import ALADModel
-from alad.recall_auxiliary import recall_1k_test
+from alad.recall_auxiliary import compute_recall
 # from utils import get_model, cosine_sim, dot_sim
 from alad.evaluation import i2t, t2i, AverageMeter, LogCollector, encode_data
 from alad.evaluate_utils.dcg import DCG
@@ -180,19 +180,21 @@ def main():
     args.per_gpu_train_batch_size = config['training']['bs']
     args.per_gpu_eval_batch_size = config['training']['bs']
 
+    # Warn: these flags are misleading: they switch Oscar in the right configuration for the Alad setup (see dataset.py)
+    args.do_test = True
+    args.do_eval = True
+    args.num_captions_per_img_val = 5
+
     logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
     global logger
     logger = setup_logger("vlpretrain", None, 0)
 
     tb_logger = SummaryWriter(log_dir=args.logger_name, comment='')
 
-
-    assert not ((config['image-model']['fine-tune'] or config['text-model']['fine-tune']) and config['dataset'][
-        'pre-extracted-features'])
-
     # Train the Model
     loss_type = config['training']['loss-type']
     alignment_mode = config['training']['alignment-mode'] if 'alignment' in loss_type else None
+    activate_distillation_after = config['training']['activate-distillation-after'] if 'activate-distillation-after' in config['training'] else 0
 
     # validate(val_loader, model, tb_logger, measure=config['training']['measure'], log_step=opt.log_step,
     #          ndcg_scorer=ndcg_val_scorer, alignment_mode=alignment_mode)
@@ -305,7 +307,7 @@ def main():
         train(args, config, train_loader, student_model, optimizer, epoch, tb_logger, val_loader, None,
               measure=config['training']['measure'], grad_clip=config['training']['grad-clip'],
               scheduler=scheduler, warmup_scheduler=warmup_scheduler, ndcg_val_scorer=ndcg_val_scorer,
-              ndcg_test_scorer=None, alignment_mode=alignment_mode, loss_type=loss_type)
+              ndcg_test_scorer=None, alignment_mode=alignment_mode, loss_type=loss_type, distill_epoch=activate_distillation_after)
 
         # evaluate on validation set
         rsum, ndcg_sum = validate(val_loader, student_model, tb_logger, measure=config['training']['measure'],
@@ -384,7 +386,9 @@ def get_teacher_scores(args, model, batch, subdivs=40):
         # result = [_.to(torch.device("cpu")) for _ in result]
 
 
-def train(opt, config, train_loader, student_model, optimizer, epoch, tb_logger, val_loader, test_loader, measure='cosine', grad_clip=-1, scheduler=None, warmup_scheduler=None, ndcg_val_scorer=None, ndcg_test_scorer=None, alignment_mode=None, loss_type=None):
+def train(opt, config, train_loader, model, optimizer, epoch, tb_logger, val_loader, test_loader,
+          measure='cosine', grad_clip=-1, scheduler=None, warmup_scheduler=None, ndcg_val_scorer=None,
+          ndcg_test_scorer=None, alignment_mode=None, loss_type=None, distill_epoch=1):
     global best_rsum
 
     # average meters to record the training statistics
@@ -394,7 +398,7 @@ def train(opt, config, train_loader, student_model, optimizer, epoch, tb_logger,
 
     end = time.time()
     for i, train_data in enumerate(train_loader):
-        student_model.train()
+        model.train()
         if scheduler is not None:
             scheduler.step(epoch)
 
@@ -407,16 +411,16 @@ def train(opt, config, train_loader, student_model, optimizer, epoch, tb_logger,
         data_time.update(time.time() - end)
 
         # make sure train logger is used
-        student_model.logger = train_logger
+        model.logger = train_logger
 
         example_imgs, example_txts = train_data
-        loss, loss_dict = student_model(example_imgs, example_txts, epoch=epoch, distill_epoch=1)
+        loss, loss_dict = model(example_imgs, example_txts, epoch=epoch, distill_epoch=distill_epoch)
         # loss = sum(loss for loss in loss_dict.values())
 
         # compute gradient and do SGD step
         loss.backward()
         if grad_clip > 0:
-            torch.nn.utils.clip_grad.clip_grad_norm_(student_model.parameters(), grad_clip)
+            torch.nn.utils.clip_grad.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()
 
         # measure elapsed time
@@ -424,7 +428,7 @@ def train(opt, config, train_loader, student_model, optimizer, epoch, tb_logger,
         end = time.time()
 
         # Print log info
-        if student_model.Eiters % opt.log_step == 0:
+        if model.Eiters % opt.log_step == 0:
             logging.info(
                 'Epoch: [{0}][{1}/{2}]\t'
                 '{e_log}\t'
@@ -432,101 +436,101 @@ def train(opt, config, train_loader, student_model, optimizer, epoch, tb_logger,
                 'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
                 .format(
                     epoch, i, len(train_loader), batch_time=batch_time,
-                    data_time=data_time, e_log=str(student_model.logger)))
+                    data_time=data_time, e_log=str(model.logger)))
 
         # Record logs in tensorboard
-        tb_logger.add_scalar('epoch', epoch, student_model.Eiters)
-        tb_logger.add_scalar('step', i, student_model.Eiters)
-        tb_logger.add_scalar('batch_time', batch_time.val, student_model.Eiters)
-        tb_logger.add_scalar('data_time', data_time.val, student_model.Eiters)
-        tb_logger.add_scalar('lr', optimizer.param_groups[0]['lr'], student_model.Eiters)
-        student_model.logger.tb_log(tb_logger, step=student_model.Eiters)
+        tb_logger.add_scalar('epoch', epoch, model.Eiters)
+        tb_logger.add_scalar('step', i, model.Eiters)
+        tb_logger.add_scalar('batch_time', batch_time.val, model.Eiters)
+        tb_logger.add_scalar('data_time', data_time.val, model.Eiters)
+        tb_logger.add_scalar('lr', optimizer.param_groups[0]['lr'], model.Eiters)
+        model.logger.tb_log(tb_logger, step=model.Eiters)
 
         del train_data
         if i % 10 == 0:
             torch.cuda.empty_cache()
 
         # validate at every val_step
-        if student_model.Eiters % opt.val_step == 0:
-            rsum, _ = validate(val_loader, student_model, tb_logger, measure=measure, log_step=opt.log_step, ndcg_scorer=ndcg_val_scorer, alignment_mode=alignment_mode, loss_type=loss_type)
+        if model.Eiters % opt.val_step == 0:
+            rsum, _ = validate(val_loader, model, tb_logger, measure=measure, log_step=opt.log_step, ndcg_scorer=ndcg_val_scorer, alignment_mode=alignment_mode, loss_type=loss_type)
 
             is_best_rsum = rsum > best_rsum
             best_rsum = max(rsum, best_rsum)
 
             save_checkpoint({
                 'epoch': epoch + 1,
-                'model': student_model.state_dict(),
+                'model': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'scheduler': scheduler.state_dict() if scheduler is not None else None,
                 'opt': opt,
                 'config': config,
-                'Eiters': student_model.Eiters,
+                'Eiters': model.Eiters,
             }, is_best_rsum, False, prefix=opt.logger_name + '/')
 
         # if model.Eiters % opt.test_step == 0:
         #     test(test_loader, model, tb_logger, measure=measure, log_step=opt.log_step, ndcg_scorer=ndcg_test_scorer)
 
 
-def validate(val_loader, model, tb_logger, measure='cosine', log_step=10, ndcg_scorer=None, alignment_mode=None, auxiliary_evaluation=True, loss_type=None):
+def validate(val_loader, model, tb_logger, measure='cosine', log_step=10, ndcg_scorer=None, alignment_mode=None, loss_type=None):
     # compute the encoding for all the validation images and captions
     img_embs, cap_embs, img_lenghts, cap_lenghts = encode_data(
         model, val_loader, log_step, logging.info)
 
+    print('Evaluating matching head...')
+    r1_match, r5_match, r10_match, r1i_match, r5i_match, r10i_match, rsum_match = compute_recall(img_embs[:, 0, :], cap_embs[:, 0, :])
+    rsum = rsum_match
+
+    # record matching metrics in tensorboard
+    tb_logger.add_scalar('matching/r1', r1_match, model.Eiters)
+    tb_logger.add_scalar('matching/r5', r5_match, model.Eiters)
+    tb_logger.add_scalar('matching/r10', r10_match, model.Eiters)
+    tb_logger.add_scalar('matching/r1i', r1i_match, model.Eiters)
+    tb_logger.add_scalar('matching/r5i', r5i_match, model.Eiters)
+    tb_logger.add_scalar('matching/r10i', r10i_match, model.Eiters)
+    tb_logger.add_scalar('matching/rsum', rsum_match, model.Eiters)
+
     # initialize similarity matrix evaluator
     if 'alignment' in loss_type:
         sim_matrix_class = AlignmentContrastiveLoss(aggregation=alignment_mode)
+
         def alignment_sim_fn(img, cap, img_len, cap_len):
             with torch.no_grad():
                 scores = sim_matrix_class(img, cap, img_len, cap_len, return_loss=False, return_similarity_mat=True)
             return scores
+
         sim_matrix_fn = alignment_sim_fn
-    elif loss_type == 'crossattention-all2all':
-        def cross_att_sim_fn(img, cap, img_len, cap_len):
-            with torch.no_grad():
-                scores = model.cross_attention_aggregation_all2all(img, cap, img_len, cap_len,
-                                                           return_similarity_mat=True)
-            return scores
 
-        sim_matrix_fn = cross_att_sim_fn
-    else:
-        sim_matrix_fn = None
+        print('Evaluating alignment head...')
+        # caption retrieval
+        (r1, r5, r10, medr, meanr, mean_rougel_ndcg, mean_spice_ndcg) = i2t(img_embs, cap_embs, img_lenghts, cap_lenghts, measure=measure, ndcg_scorer=ndcg_scorer, sim_function=sim_matrix_fn, cap_batches=5)
+        logging.info("Image to text: %.1f, %.1f, %.1f, %.1f, %.1f, ndcg_rouge=%.4f ndcg_spice=%.4f" %
+                     (r1, r5, r10, medr, meanr, mean_rougel_ndcg, mean_spice_ndcg))
+        # image retrieval
+        (r1i, r5i, r10i, medri, meanr, mean_rougel_ndcg_i, mean_spice_ndcg_i) = t2i(
+            img_embs, cap_embs, img_lenghts, cap_lenghts, ndcg_scorer=ndcg_scorer, measure=measure, sim_function=sim_matrix_fn, im_batches=1)
 
-    if auxiliary_evaluation:
-        print('Evaluating with the auxiliary recall function...')
-        r1_aux, r5_aux, r10_aux, r1i_aux, r5i_aux, r10i_aux, rsum_aux = recall_1k_test(img_embs[:, 0, :], cap_embs[:, 0, :])
+        logging.info("Text to image: %.1f, %.1f, %.1f, %.1f, %.1f, ndcg_rouge=%.4f ndcg_spice=%.4f" %
+                     (r1i, r5i, r10i, medri, meanr, mean_rougel_ndcg_i, mean_spice_ndcg_i))
+        # sum of recalls to be used for early stopping
+        rsum_align = r1 + r5 + r10 + r1i + r5i + r10i
+        # spice_ndcg_sum = mean_spice_ndcg + mean_spice_ndcg_i
 
-    print('Evaluating with the primary evaluation code...')
-    # caption retrieval
-    (r1, r5, r10, medr, meanr, mean_rougel_ndcg, mean_spice_ndcg) = i2t(img_embs, cap_embs, img_lenghts, cap_lenghts, measure=measure, ndcg_scorer=ndcg_scorer, sim_function=sim_matrix_fn, cap_batches=5)
-    logging.info("Image to text: %.1f, %.1f, %.1f, %.1f, %.1f, ndcg_rouge=%.4f ndcg_spice=%.4f" %
-                 (r1, r5, r10, medr, meanr, mean_rougel_ndcg, mean_spice_ndcg))
-    # image retrieval
-    (r1i, r5i, r10i, medri, meanr, mean_rougel_ndcg_i, mean_spice_ndcg_i) = t2i(
-        img_embs, cap_embs, img_lenghts, cap_lenghts, ndcg_scorer=ndcg_scorer, measure=measure, sim_function=sim_matrix_fn, im_batches=1)
+        # record alignment metrics in tensorboard
+        tb_logger.add_scalar('alignment/r1', r1, model.Eiters)
+        tb_logger.add_scalar('alignment/r5', r5, model.Eiters)
+        tb_logger.add_scalar('alignment/r10', r10, model.Eiters)
+        tb_logger.add_scalar('alignment/r1i', r1i, model.Eiters)
+        tb_logger.add_scalar('alignment/r5i', r5i, model.Eiters)
+        tb_logger.add_scalar('alignment/r10i', r10i, model.Eiters)
+        tb_logger.add_scalar('alignment/medr', medr, model.Eiters)
+        tb_logger.add_scalar('alignment/meanr', meanr, model.Eiters)
+        tb_logger.add_scalar('alignment/medri', medri, model.Eiters)
+        tb_logger.add_scalar('alignment/meanr', meanr, model.Eiters)
+        tb_logger.add_scalar('rsum', rsum_align, model.Eiters)
 
-    logging.info("Text to image: %.1f, %.1f, %.1f, %.1f, %.1f, ndcg_rouge=%.4f ndcg_spice=%.4f" %
-                 (r1i, r5i, r10i, medri, meanr, mean_rougel_ndcg_i, mean_spice_ndcg_i))
-    # sum of recalls to be used for early stopping
-    currscore = r1 + r5 + r10 + r1i + r5i + r10i
-    spice_ndcg_sum = mean_spice_ndcg + mean_spice_ndcg_i
+        rsum += rsum_align
 
-    # record metrics in tensorboard
-    tb_logger.add_scalars('r1', {'tern': r1_aux, 'teran': r1}, model.Eiters)
-    tb_logger.add_scalars('r5', {'tern': r5_aux, 'teran': r5}, model.Eiters)
-    tb_logger.add_scalars('r10', {'tern': r10_aux, 'teran': r10}, model.Eiters)
-    tb_logger.add_scalars('mean_ndcg', {'rougeL': mean_rougel_ndcg, 'spice': mean_spice_ndcg}, model.Eiters)
-    tb_logger.add_scalar('medr', medr, model.Eiters)
-    tb_logger.add_scalar('meanr', meanr, model.Eiters)
-    tb_logger.add_scalars('r1i', {'tern': r1i_aux, 'teran': r1i}, model.Eiters)
-    tb_logger.add_scalars('r5i', {'tern': r5i_aux, 'teran': r5i}, model.Eiters)
-    tb_logger.add_scalars('r10i', {'tern': r10i_aux, 'teran': r10i}, model.Eiters)
-    tb_logger.add_scalars('mean_ndcg_i', {'rougeL': mean_rougel_ndcg_i, 'spice': mean_spice_ndcg_i}, model.Eiters)
-    tb_logger.add_scalar('medri', medri, model.Eiters)
-    tb_logger.add_scalar('meanr', meanr, model.Eiters)
-    tb_logger.add_scalars('rsum', {'tern': rsum_aux, 'teran': currscore}, model.Eiters)
-    tb_logger.add_scalar('spice_ndcg_sum', spice_ndcg_sum, model.Eiters)
-
-    return currscore, spice_ndcg_sum
+    return rsum, 0
 
 def restore_training_settings(args):
     assert not args.do_train and (args.do_test or args.do_eval)

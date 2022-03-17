@@ -42,11 +42,7 @@ class JointTextImageTransformerEncoder(nn.Module):
         bert_config.output_hidden_states = True
         self.oscar_model = model_class.from_pretrained(oscar_checkpoint, config=bert_config)
 
-
-        # self.txt_enc = EncoderText(config)
         # self.oscar_model = oscar_model
-        visual_feat_dim = config['image-model']['feat-dim']
-        caption_feat_dim = config['text-model']['word-dim']
         dropout = config['model']['dropout']
         self.freeze_teran = config['model']['freeze-teran'] if 'freeze-teran' in config['model'] else False
         teran_layers = config['model']['teran-layers']
@@ -54,7 +50,6 @@ class JointTextImageTransformerEncoder(nn.Module):
         post_oscar_layers = config['model']['post-layers'] if 'post-layers' in config['model'] else 0
         embed_size = config['model']['embed-size']
         self.order_embeddings = config['training']['measure'] == 'order'
-        # self.img_enc = EncoderImage(config)
 
         hidden_size = 768
         self.img_proj = nn.Linear(hidden_size, embed_size)
@@ -392,7 +387,7 @@ class ALADModel(torch.nn.Module):
             # alignment_loss *= self.losses_weights['alignment']
             if 'alignment' in self.losses_types:
                 losses.update({'alignment': alignment_loss})
-            self.logger.update('alignment_loss', alignment_loss.item(), img_emb_set.size(0))
+                self.logger.update('alignment_loss', alignment_loss.item(), img_emb_set.size(0))
 
         # if 'crossattention-all2all' in self.config['training']['loss-type']:
         #     matching_loss = self.cross_attention_aggregation_all2all(img_emb_set, cap_emb_seq, img_lengths, cap_lengths)
@@ -411,11 +406,6 @@ class ALADModel(torch.nn.Module):
             # distillation_loss *= self.losses_weights['distillation']
             losses.update({'distillation': distillation_loss})
             self.logger.update('distillation_loss', distillation_loss.item(), img_emb.size(0))
-
-        if 'attdistillation' in self.losses_types:
-            att_distillation_loss = self.att_distillation_loss(img_emb_set, cap_emb_seq, img_lengths, cap_lengths, teacher_attentions)
-            losses.update({'attdistillation': att_distillation_loss})
-            self.logger.update('att_distillation_loss', att_distillation_loss.item(), img_emb.size(0))
 
         if 'entropy' in self.losses_types:
             # img_emb, cap_emb = self.cross_attention_aggregation(img_emb_set, cap_emb_seq, img_lengths, cap_lengths)

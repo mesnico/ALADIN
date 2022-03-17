@@ -1,0 +1,35 @@
+dataset:
+  name: 'coco'
+
+model:
+  name: 'teran'
+  embed-size: 768
+  text-aggregation: 'first'
+  image-aggregation: 'first'
+  freeze-teran: True                    # freezes the vin-vl backbone
+  teran-layers: 0
+  tern-layers: 2                        # number of TE layers in the matching head
+  post-layers: 0
+  exclude-stopwords: False
+  shared-transformer: True
+  depth-aggregation-alignment: False
+  depth-aggregation-matching: False
+  dropout: 0.1
+
+training:
+  lr: 0.00001  # 0.000006
+  grad-clip: 2.0
+  max-violation: True
+  loss-type: 'matching'               # 'train the matching head using hinge-based triplet loss
+  loss-weights: [1]
+  alignment-mode: 'MrSw'              # alignment: max over image regions, sum over the words
+  distillation-mode: 'listnet'
+  measure: 'dot'
+  margin: 0.2                         # hinge-based triplet ranking loss margin (alpha)
+  bs: 32
+
+  scheduler: 'steplr'
+  gamma: 0.1
+  step-size: 10
+  warmup: null
+  warmup-period: 1000

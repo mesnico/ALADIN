@@ -130,20 +130,20 @@ def recall_1k_5fold_test(img_embs, cap_embs, tot_lengths=None, model=None):
     return r1, r5, r10, r1i, r5i, r10i, rsum
 
 
-def recall_1k_test(img_embs, cap_embs, tot_lengths=None, model=None):
+def compute_recall(img_embs, cap_embs, tot_lengths=None, model=None):
     with torch.no_grad():
         # tot_lengths = torch.split(tot_lengths, 5000, dim=0)
 
         # r1, r5, r10, r1i, r5i, r10i, _ = recall_test(img_embs[i * 5000:(i + 1) * 5000],
         #                                              cap_embs[i * 5000:(i + 1) * 5000],
         #                                              tot_lengths[i * 5000:(i + 1) * 5000], model)
-        print('Computing Test recall...')
+        # print('Computing Test recall...')
         r1, r5, r10, r1i, r5i, r10i, _ = recall_test(img_embs.to(device), cap_embs.to(device),
                                                      None, None)
         rsum = r1 + r5 + r10 + r1i + r5i + r10i
 
-        print("Test 1K 5Folds - Recall Image to text: %.2f, %.2f, %.2f" % (r1, r5, r10))
-        print("Test 1K 5Folds - Recall Text to image: %.2f, %.2f, %.2f" % (r1i, r5i, r10i))
-        print('Test 1K 5Folds - Sum score: %.2f' % rsum)
+        print("Recall Image to text: %.2f, %.2f, %.2f" % (r1, r5, r10))
+        print("Recall Text to image: %.2f, %.2f, %.2f" % (r1i, r5i, r10i))
+        print('Sum score: %.2f' % rsum)
 
     return r1, r5, r10, r1i, r5i, r10i, rsum

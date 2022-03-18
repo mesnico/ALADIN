@@ -81,4 +81,4 @@ cd alad
 python test.py --data_dir <data-folder>/coco_ir --img_feat_file <features-folder>/features.tsv --eval_model_dir <checkpoint-target-folder>/checkpoint-0132780 --max_seq_length 50 --max_img_seq_length 34 --eval_img_keys_file test_img_keys_1k.tsv --load_checkpoint <path/to/checkpoint.pth.tar>
 ``` 
 
-To train on 5k test set, simply set `--eval_img_keys_file test_img_keys_1k.tsv` 
+To train on 5k test set, simply set `--eval_img_keys_file test_img_keys.tsv` 

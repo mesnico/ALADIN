@@ -53,9 +53,31 @@ Download the pre-extracted Bottom-Up features
 path/to/azcopy copy 'https://biglmdiag.blob.core.windows.net/vinvl/image_features/coco_X152C4_frcnnbig2_exp168model_0060000model.roi_heads.nm_filter_2_model.roi_heads.score_thresh_0.2/model_0060000/' <features-folder> --recursive
 ```
 
-## Training:
+## Training
 ``` 
-cd teran 
-
-python train_finetune.py --do_test --do_eval --num_captions_per_img_val 5 --data_dir <data-folder>/coco_ir --img_feat_file <features-folder>/features.tsv --cross_image_eval --per_gpu_eval_batch_size 64 --eval_model_dir <checkpoint-target-folder>/checkpoint-0132780 --config configs/teran_finetune_on_oscar_coco.yaml --logger_name <output-folder> --val_step 7000 --max_seq_length 50 --max_img_seq_length 34
+cd alad 
+python train.py --data_dir <data-folder>/coco_ir --img_feat_file <features-folder>/features.tsv --eval_model_dir <checkpoint-target-folder>/checkpoint-0132780 --config configs/<config>.yaml --logger_name <output-folder> --val_step 7000 --max_seq_length 50 --max_img_seq_length 34
 ```
+
+### Configurations
+The parameter `--config` is very important. Configurations are placed in yaml format inside the `configs` folder:
+- `alad-alignment-triplet.yaml`: Trains the alignment head using hinge-based triplet ranking loss, finetuning also the Vin-VL backbone;
+- `alad-matching-triplet-finetune.yaml`: Trains only the matching head using hinge-based triplet ranking loss. The parameter `--load-teacher-model` can be used to provide a backbone previously trained using the `alad-alignment-triplet.yaml` configuration;
+- `alad-matching-distill-finetune.yaml`: Trains only the matching head by distilling the scores from the alignment head. The parameter `--load-teacher-model` in this case IS NEEDED to provide a correctly trained alignment head, previously trained using the `alad-alignment-triplet.yaml` configuration;
+- `alad-matching-triplet-e2e.yaml`: Trains the matching head, finetuning also the Vin-VL backbone;
+- `alad-alignment-and-matching-distill.yaml` **[Experimental]** Trains the whole architecture (matching+alignment heads) end-to-end. The variable `activate_distillation_after` inside the configuration file controls how many epochs to wait before activating the distillation loss (wait that the backbone is minimally stable);
+
+### Monitor Training
+Training and validation metrics, as well as model checkpoints are put inside the `<output-folder>` path.
+You can live monitor all the metrics using tensorboard:
+``` 
+tensorboard --logdir <output-folder>
+```
+
+## Testing
+The following script tests a model on the 1k MS-COCO test set
+```
+python test.py --data_dir <data-folder>/coco_ir --img_feat_file <features-folder>/features.tsv --eval_model_dir <checkpoint-target-folder>/checkpoint-0132780 --max_seq_length 50 --max_img_seq_length 34 --eval_img_keys_file test_img_keys_1k.tsv --load_checkpoint <path/to/checkpoint.pth.tar>
+``` 
+
+To train on 5k test set, simply set `--eval_img_keys_file test_img_keys_1k.tsv` 

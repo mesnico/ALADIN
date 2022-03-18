@@ -116,8 +116,8 @@ def main():
     parser.add_argument("--warmup_steps", default=0, type=int, help="Linear warmup.")
     parser.add_argument("--scheduler", default='linear', type=str, help="constant or linear.")
     parser.add_argument("--num_workers", default=4, type=int, help="Workers in dataloader.")
-    parser.add_argument("--num_train_epochs", default=20, type=int,
-                        help="Total number of training epochs to perform.")
+    # parser.add_argument("--num_train_epochs", default=20, type=int,
+    #                     help="Total number of training epochs to perform.")
     parser.add_argument("--max_steps", default=-1, type=int,
                         help="Total number of training steps. Override num_train_epochs.")
     parser.add_argument('--logging_steps', type=int, default=20, help="Log every X steps.")
@@ -138,12 +138,12 @@ def main():
     #                     help='path to datasets')
     # parser.add_argument('--data_name', default='precomp',
     #                     help='{coco,f8k,f30k,10crop}_precomp|coco|f8k|f30k')
-    parser.add_argument('--num_epochs', default=30, type=int,
+    parser.add_argument('--num_epochs', default=20, type=int,
                         help='Number of training epochs.')
     # parser.add_argument('--crop_size', default=224, type=int,
     #                     help='Size of an image crop as the CNN input.')
-    parser.add_argument('--lr_update', default=15, type=int,
-                        help='Number of epochs to update the learning rate.')
+    # parser.add_argument('--lr_update', default=15, type=int,
+    #                     help='Number of epochs to update the learning rate.')
     # parser.add_argument('--workers', default=10, type=int,
     #                     help='Number of data loader workers.')
     parser.add_argument('--log_step', default=10, type=int,
@@ -158,8 +158,8 @@ def main():
                         help='path to latest checkpoint (default: none). Loads model, optimizer, scheduler')
     parser.add_argument('--load-teacher-model', default='', type=str, metavar='PATH',
                         help='path to latest checkpoint (default: none). Loads only the model')
-    parser.add_argument('--use_restval', action='store_true',
-                        help='Use the restval data for training on MSCOCO.')
+    # parser.add_argument('--use_restval', action='store_true',
+    #                     help='Use the restval data for training on MSCOCO.')
     parser.add_argument('--reinitialize-scheduler', action='store_true',
                         help='Reinitialize scheduler. To use with --resume')
     parser.add_argument('--config', type=str, help="Which configuration to use. See into 'config' folder")
@@ -183,7 +183,6 @@ def main():
     # Warn: these flags are misleading: they switch Oscar in the right configuration for the Alad setup (see dataset.py)
     args.do_test = True
     args.do_eval = True
-    args.num_captions_per_img_val = 5
 
     logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
     global logger
@@ -249,11 +248,11 @@ def main():
     # logger.info("Evaluate the following checkpoint: %s", checkpoint)
 
     # Construct the student model
-    student_model = ALADModel(config, oscar_checkpoint)
+    model = ALADModel(config, oscar_checkpoint)
     if torch.cuda.is_available():
-        student_model.cuda()
+        model.cuda()
 
-    optimizer = torch.optim.Adam(student_model.parameters(), lr=config['training']['lr'])
+    optimizer = torch.optim.Adam(model.parameters(), lr=config['training']['lr'])
 
     # LR scheduler
     scheduler_name = config['training']['scheduler']
@@ -281,9 +280,9 @@ def main():
         if os.path.isfile(filename):
             print("=> loading checkpoint '{}'".format(filename))
             oscar_checkpoint = torch.load(filename, map_location='cpu')
-            student_model.load_state_dict(oscar_checkpoint['model'], strict=False if args.load_teacher_model else True)
+            model.load_state_dict(oscar_checkpoint['model'], strict=False if args.load_teacher_model else True)
             if torch.cuda.is_available():
-                student_model.cuda()
+                model.cuda()
             print('Student model loaded!')
             if args.resume:
                 start_epoch = oscar_checkpoint['epoch']
@@ -293,24 +292,24 @@ def main():
                     scheduler.load_state_dict(oscar_checkpoint['scheduler'])
                 # Eiters is used to show logs as the continuation of another
                 # training
-                student_model.Eiters = oscar_checkpoint['Eiters']
+                model.Eiters = oscar_checkpoint['Eiters']
                 print("=> loaded checkpoint '{}' (epoch {})"
                       .format(args.resume, start_epoch))
             else:
                 print("=> loaded only model from checkpoint '{}'"
                       .format(args.load_teacher_model))
         else:
-            print("=> no checkpoint found at '{}'".format(args.resume))
+            raise ValueError("=> no checkpoint found at '{}'".format(filename))
 
     for epoch in range(start_epoch, args.num_epochs):
         # train for one epoch
-        train(args, config, train_loader, student_model, optimizer, epoch, tb_logger, val_loader, None,
+        train(args, config, train_loader, model, optimizer, epoch, tb_logger, val_loader, None,
               measure=config['training']['measure'], grad_clip=config['training']['grad-clip'],
               scheduler=scheduler, warmup_scheduler=warmup_scheduler, ndcg_val_scorer=ndcg_val_scorer,
               ndcg_test_scorer=None, alignment_mode=alignment_mode, loss_type=loss_type, distill_epoch=activate_distillation_after)
 
         # evaluate on validation set
-        rsum, ndcg_sum = validate(val_loader, student_model, tb_logger, measure=config['training']['measure'],
+        rsum, ndcg_sum = validate(val_loader, model, tb_logger, measure=config['training']['measure'],
                                   log_step=args.log_step,
                                   ndcg_scorer=ndcg_val_scorer, alignment_mode=alignment_mode, loss_type=loss_type)
 
@@ -329,12 +328,12 @@ def main():
 
         save_checkpoint({
             'epoch': epoch + 1,
-            'model': student_model.state_dict(),
+            'model': model.state_dict(),
             'optimizer': optimizer.state_dict(),
             'scheduler': scheduler.state_dict() if scheduler is not None else None,
             'opt': args,
             'config': config,
-            'Eiters': student_model.Eiters,
+            'Eiters': model.Eiters,
         }, is_best_rsum, is_best_ndcg, prefix=args.logger_name + '/')
 
 

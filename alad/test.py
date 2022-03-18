@@ -144,8 +144,8 @@ def main():
     #                     help='Number of data loader workers.')
     parser.add_argument('--load_checkpoint', default='', type=str, metavar='PATH',
                         help='path to latest checkpoint (default: none). Loads only the model')
-    parser.add_argument('--use_restval', action='store_true',
-                        help='Use the restval data for training on MSCOCO.')
+    # parser.add_argument('--use_restval', action='store_true',
+    #                     help='Use the restval data for training on MSCOCO.')
     parser.add_argument('--config', type=str, help="Which configuration to use. See into 'config' folder")
 
 
@@ -166,22 +166,22 @@ def main():
         print("=> loading checkpoint '{}'".format(filename))
         loaded_checkpoint = torch.load(filename, map_location='cpu')
     else:
-        raise FileNotFoundError("=> no checkpoint found at '{}'".format(args.resume))
+        raise FileNotFoundError("=> no checkpoint found at '{}'".format(filename))
 
     config = loaded_checkpoint['config']
     args.per_gpu_train_batch_size = config['training']['bs']
     args.per_gpu_eval_batch_size = config['training']['bs']
 
-    # override loss-type
+    # Warn: these flags are misleading: they switch Oscar in the right configuration for the Alad setup (see dataset.py)
+    args.do_test = True
+    args.do_eval = True
+
+    # override loss-type (we want to test both the alignment and the matching head)
     config['training']['loss-type'] = 'alignment-distillation'
 
     logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
     global logger
     logger = setup_logger("vlpretrain", None, 0)
-
-
-    assert not ((config['image-model']['fine-tune'] or config['text-model']['fine-tune']) and config['dataset'][
-        'pre-extracted-features'])
 
     # Train the Model
     loss_type = config['training']['loss-type']
@@ -204,7 +204,7 @@ def main():
     tokenizer = tokenizer_class.from_pretrained(oscar_checkpoint)
 
     split = 'test' #'minival'
-    is_train = False #True
+    is_train = False
 
     test_dataset = RetrievalDataset(tokenizer, args, split, is_train=is_train)
     test_collate = MyCollate(dataset=test_dataset, return_oscar_data=False)
@@ -249,7 +249,7 @@ def main():
     test(test_loader, student_model, alignment_mode=alignment_mode)
 
 
-def test(test_loader, model, measure='cosine', log_step=10, ndcg_scorer=None, alignment_mode=None, auxiliary_evaluation=True):
+def test(test_loader, model, measure='cosine', log_step=10, ndcg_scorer=None, alignment_mode=None):
     # compute the encoding for all the validation images and captions
     img_embs, cap_embs, img_lenghts, cap_lenghts = encode_data(
         model, test_loader, log_step, logging.info)
@@ -262,11 +262,10 @@ def test(test_loader, model, measure='cosine', log_step=10, ndcg_scorer=None, al
         return scores
     sim_matrix_fn = alignment_sim_fn
 
-    if auxiliary_evaluation:
-        print('Evaluating with the auxiliary recall function...')
-        compute_recall(img_embs[:, 0, :], cap_embs[:, 0, :])
+    print('Evaluating matching head...')
+    compute_recall(img_embs[:, 0, :], cap_embs[:, 0, :])
 
-    print('Evaluating with the primary evaluation code...')
+    print('Evaluating alignment head...')
     # caption retrieval
     (r1, r5, r10, medr, meanr, mean_rougel_ndcg, mean_spice_ndcg) = i2t(img_embs, cap_embs, img_lenghts, cap_lenghts, measure=measure, ndcg_scorer=ndcg_scorer, sim_function=sim_matrix_fn, cap_batches=5)
     logging.info("Image to text: %.1f, %.1f, %.1f, %.1f, %.1f, ndcg_rouge=%.4f ndcg_spice=%.4f" %
@@ -277,11 +276,6 @@ def test(test_loader, model, measure='cosine', log_step=10, ndcg_scorer=None, al
 
     logging.info("Text to image: %.1f, %.1f, %.1f, %.1f, %.1f, ndcg_rouge=%.4f ndcg_spice=%.4f" %
                  (r1i, r5i, r10i, medri, meanr, mean_rougel_ndcg_i, mean_spice_ndcg_i))
-    # sum of recalls to be used for early stopping
-    currscore = r1 + r5 + r10 + r1i + r5i + r10i
-    spice_ndcg_sum = mean_spice_ndcg + mean_spice_ndcg_i
-
-    return currscore, spice_ndcg_sum
 
 def restore_training_settings(args):
     assert not args.do_train and (args.do_test or args.do_eval)

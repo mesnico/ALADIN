@@ -178,6 +178,7 @@ def main():
 
     # override loss-type (we want to test both the alignment and the matching head)
     config['training']['loss-type'] = 'alignment-distillation'
+    config['training']['loss-weights'] = [1, 1]
 
     logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
     global logger
@@ -241,7 +242,7 @@ def main():
     student_model = ALADModel(config, oscar_checkpoint)
 
     # resume from a checkpoint
-    student_model.load_state_dict(loaded_checkpoint['model'], strict=True)
+    student_model.load_state_dict(loaded_checkpoint['model'], strict=False)
     if torch.cuda.is_available():
         student_model.cuda()
     print('Model checkpoint loaded!')

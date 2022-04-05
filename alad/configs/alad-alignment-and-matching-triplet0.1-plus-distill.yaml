@@ -20,8 +20,8 @@ training:
   lr: 0.00001  # 0.000006
   grad-clip: 2.0
   max-violation: True
-  loss-type: 'alignment-distillation'      # 'train the alignment head using hinge-based triplet loss, and at the same time learn the matching head using distillation
-  loss-weights: [1, 1]
+  loss-type: 'alignment-distillation-matching'      # 'train the alignment head using hinge-based triplet loss, and at the same time learn the matching head using distillation
+  loss-weights: [1, 1, 0.1]
   alignment-mode: 'MrSw'      # alignment: max over image regions, sum over the words
   distillation-mode: 'listnet'
   activate_distillation_after: 0  # activate the distillation loss after 2 training epochs (wait that the backbone stabilizes)

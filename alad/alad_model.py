@@ -122,82 +122,96 @@ class JointTextImageTransformerEncoder(nn.Module):
         grad_enabled = not self.freeze_teran
         with torch.set_grad_enabled(grad_enabled):
             # process captions by using oscar
-            inputs_txts = {
-                'input_ids': examples_txts[0],
-                'attention_mask': examples_txts[1],
-                'token_type_ids': examples_txts[2],
-                'img_feats': None
-            }
-            txt_bert_output = self.oscar_model.bert(**inputs_txts)
+            if examples_txts is not None:
+                inputs_txts = {
+                    'input_ids': examples_txts[0],
+                    'attention_mask': examples_txts[1],
+                    'token_type_ids': examples_txts[2],
+                    'img_feats': None
+                }
+                txt_bert_output = self.oscar_model.bert(**inputs_txts)
+            else:
+                txt_bert_output = None
+                inputs_txts = None
 
             # process image regions using oscar
-            inputs_imgs = {
-                'input_ids': examples_imgs[0],
-                'attention_mask': examples_imgs[1],
-                'token_type_ids': examples_imgs[2],
-                'img_feats': examples_imgs[3],
-            }
-            img_bert_output = self.oscar_model.bert(**inputs_imgs)
-            # i_emb = i_emb.permute(1, 0, 2)
+            if examples_imgs is not None:
+                inputs_imgs = {
+                    'input_ids': examples_imgs[0],
+                    'attention_mask': examples_imgs[1],
+                    'token_type_ids': examples_imgs[2],
+                    'img_feats': examples_imgs[3],
+                }
+                img_bert_output = self.oscar_model.bert(**inputs_imgs)
+            else:
+                img_bert_output = None
+                inputs_imgs = None
+                # i_emb = i_emb.permute(1, 0, 2)
 
-            bs = inputs_imgs['img_feats'].shape[0]
+            bs = inputs_imgs['img_feats'].shape[0] if inputs_imgs is not None else inputs_txts['input_ids'].shape[0]
 
-            cap_len = examples_txts[4]
-            feat_len = examples_imgs[5]
+            cap_len = examples_txts[4] if examples_txts is not None else [0]
+            feat_len = examples_imgs[5] if examples_imgs is not None else [0]
 
-            max_language_token_len = inputs_txts['input_ids'].shape[1]
+            max_language_token_len = inputs_txts['input_ids'].shape[1] if inputs_txts is not None else 0
             max_cap_len = max(cap_len)
             max_img_len = max(feat_len)
 
             # masks
-            txt_mask = torch.zeros(bs, max(cap_len)).bool()
-            txt_mask = txt_mask.to(inputs_txts['input_ids'].device)
-            for m, c_len in zip(txt_mask, cap_len):
-                m[c_len:] = True
+            if inputs_txts is not None:
+                txt_mask = torch.zeros(bs, max(cap_len)).bool()
+                txt_mask = txt_mask.to(inputs_txts['input_ids'].device)
+                for m, c_len in zip(txt_mask, cap_len):
+                    m[c_len:] = True
 
-            img_mask = torch.zeros(bs, max(feat_len)).bool()
-            img_mask = img_mask.to(inputs_imgs['img_feats'].device)
-            for m, v_len in zip(img_mask, feat_len):
-                m[v_len:] = True
+            if inputs_imgs is not None:
+                img_mask = torch.zeros(bs, max(feat_len)).bool()
+                img_mask = img_mask.to(inputs_imgs['img_feats'].device)
+                for m, v_len in zip(img_mask, feat_len):
+                    m[v_len:] = True
 
             if self.depth_aggregation_alignment:
-                hidden_states_img = torch.stack(img_bert_output[2], dim=0)  # depth x B x N x dim
-                hidden_states_img = hidden_states_img[:, :, max_language_token_len:max_language_token_len + max_img_len, :]
-                i_hidden_states = self.depth_aggregator_model_alignment(hidden_states_img[:-1], img_mask)
-                i_emb_teran = self.feature_fusion(i_hidden_states, hidden_states_img[-1].contiguous()).permute(1, 0, 2) # S x B x dim
+                if inputs_imgs is not None:
+                    hidden_states_img = torch.stack(img_bert_output[2], dim=0)  # depth x B x N x dim
+                    hidden_states_img = hidden_states_img[:, :, max_language_token_len:max_language_token_len + max_img_len, :]
+                    i_hidden_states = self.depth_aggregator_model_alignment(hidden_states_img[:-1], img_mask)
+                    i_emb_teran = self.feature_fusion(i_hidden_states, hidden_states_img[-1].contiguous()).permute(1, 0, 2) # S x B x dim
 
-                hidden_states_txt = torch.stack(txt_bert_output[2], dim=0)
-                hidden_states_txt = hidden_states_txt[:, :, :max_cap_len, :]
-                c_hidden_states = self.depth_aggregator_model_alignment(hidden_states_txt[:-1], txt_mask)
-                c_emb_teran = self.feature_fusion(c_hidden_states, hidden_states_txt[-1].contiguous()).permute(1, 0, 2) # S x B x dim
+                if inputs_txts is not None:
+                    hidden_states_txt = torch.stack(txt_bert_output[2], dim=0)
+                    hidden_states_txt = hidden_states_txt[:, :, :max_cap_len, :]
+                    c_hidden_states = self.depth_aggregator_model_alignment(hidden_states_txt[:-1], txt_mask)
+                    c_emb_teran = self.feature_fusion(c_hidden_states, hidden_states_txt[-1].contiguous()).permute(1, 0, 2) # S x B x dim
             else:
-                c_emb_teran = txt_bert_output[0][:, :max_cap_len].permute(1, 0, 2)
-                i_emb_teran = img_bert_output[0][:, max_language_token_len:max_language_token_len + max_img_len].permute(1, 0, 2)
+                c_emb_teran = txt_bert_output[0][:, :max_cap_len].permute(1, 0, 2) if txt_bert_output is not None else None
+                i_emb_teran = img_bert_output[0][:, max_language_token_len:max_language_token_len + max_img_len].permute(1, 0, 2) if img_bert_output is not None else None
 
         if self.depth_aggregation_matching:
             # only for TERN
-            hidden_states_img = torch.stack(img_bert_output[2], dim=0)   # depth x B x N x dim
-            hidden_states_img = hidden_states_img[:, :, max_language_token_len:max_language_token_len + max_img_len, :]
-            if self.post_oscar_transformer is not None:
-                last_img_tokens = img_bert_output[0][:, max_language_token_len:max_language_token_len + max_img_len]
-                last_img_tokens = self.post_oscar_transformer(last_img_tokens.permute(1, 0, 2), src_key_padding_mask=img_mask).permute(1, 0, 2)
-                hidden_states_img = torch.cat([hidden_states_img, last_img_tokens.unsqueeze(0)], dim=0)  # depth+1 x B x S x dim
-            i_emb = self.depth_aggregator_model_matching(hidden_states_img, img_mask).permute(1, 0, 2)    # S x B x dim
+            if inputs_imgs is not None:
+                hidden_states_img = torch.stack(img_bert_output[2], dim=0)   # depth x B x N x dim
+                hidden_states_img = hidden_states_img[:, :, max_language_token_len:max_language_token_len + max_img_len, :]
+                if self.post_oscar_transformer is not None:
+                    last_img_tokens = img_bert_output[0][:, max_language_token_len:max_language_token_len + max_img_len]
+                    last_img_tokens = self.post_oscar_transformer(last_img_tokens.permute(1, 0, 2), src_key_padding_mask=img_mask).permute(1, 0, 2)
+                    hidden_states_img = torch.cat([hidden_states_img, last_img_tokens.unsqueeze(0)], dim=0)  # depth+1 x B x S x dim
+                i_emb = self.depth_aggregator_model_matching(hidden_states_img, img_mask).permute(1, 0, 2)    # S x B x dim
 
-            hidden_states_txt = torch.stack(txt_bert_output[2], dim=0)
-            hidden_states_txt = hidden_states_txt[:, :, :max_cap_len, :]
-            if self.post_oscar_transformer is not None:
-                last_txt_tokens = txt_bert_output[0][:, :max_cap_len]
-                last_txt_tokens = self.post_oscar_transformer(last_txt_tokens.permute(1, 0, 2), src_key_padding_mask=txt_mask).permute(1, 0, 2)
-                hidden_states_txt = torch.cat([hidden_states_txt, last_txt_tokens.unsqueeze(0)], dim=0)  # depth+1 x B x S x dim
-            c_emb = self.depth_aggregator_model_matching(hidden_states_txt, txt_mask).permute(1, 0, 2)   # S x B x dim
+            if inputs_txts is not None:
+                hidden_states_txt = torch.stack(txt_bert_output[2], dim=0)
+                hidden_states_txt = hidden_states_txt[:, :, :max_cap_len, :]
+                if self.post_oscar_transformer is not None:
+                    last_txt_tokens = txt_bert_output[0][:, :max_cap_len]
+                    last_txt_tokens = self.post_oscar_transformer(last_txt_tokens.permute(1, 0, 2), src_key_padding_mask=txt_mask).permute(1, 0, 2)
+                    hidden_states_txt = torch.cat([hidden_states_txt, last_txt_tokens.unsqueeze(0)], dim=0)  # depth+1 x B x S x dim
+                c_emb = self.depth_aggregator_model_matching(hidden_states_txt, txt_mask).permute(1, 0, 2)   # S x B x dim
         else:
             c_emb = c_emb_teran
             i_emb = i_emb_teran
 
         with torch.set_grad_enabled(grad_enabled):
             # forward the captions
-            if self.text_aggregation_type is not None:
+            if self.text_aggregation_type is not None and inputs_txts is not None:
                 # c_emb = self.cap_proj(c_emb)
 
                 set_caption_embeddings = self.transformer_encoder_1(c_emb_teran, src_key_padding_mask=txt_mask)  # S_txt x B x dim
@@ -207,7 +221,7 @@ class JointTextImageTransformerEncoder(nn.Module):
                 set_caption_embeddings = c_emb_teran
 
             # forward the regions
-            if self.img_aggregation_type is not None:
+            if self.img_aggregation_type is not None and inputs_imgs is not None:
                 # i_emb = self.img_proj(i_emb)
 
                 if self.shared_transformer:
@@ -229,16 +243,16 @@ class JointTextImageTransformerEncoder(nn.Module):
 
         # cross_attention_image, cross_attention_caption = set_image_embeddings[0], set_caption_embeddings[0] # self.self_aggregation(img_emb_set, cap_emb_seq, feat_len, cap_len)
         if self.final_projection_net:
-            cross_attention_caption = self.final_projection_net(c_emb, src_key_padding_mask=txt_mask)[0]
-            cross_attention_image = self.final_projection_net(i_emb, src_key_padding_mask=img_mask)[0]
+            cross_attention_caption = self.final_projection_net(c_emb, src_key_padding_mask=txt_mask)[0] if c_emb is not None else None
+            cross_attention_image = self.final_projection_net(i_emb, src_key_padding_mask=img_mask)[0] if i_emb is not None else None
         else:
-            cross_attention_image, cross_attention_caption = set_image_embeddings[0], set_caption_embeddings[0]
+            cross_attention_image, cross_attention_caption = set_image_embeddings[0] if set_image_embeddings is not None else None, set_caption_embeddings[0] if set_caption_embeddings is not None else None
         # normalize every vector of the set and the self-aggregated vectors
-        set_image_embeddings = F.normalize(set_image_embeddings, p=2, dim=2)
-        set_caption_embeddings = F.normalize(set_caption_embeddings, p=2, dim=2)
+        set_image_embeddings = F.normalize(set_image_embeddings, p=2, dim=2) if set_image_embeddings is not None else None
+        set_caption_embeddings = F.normalize(set_caption_embeddings, p=2, dim=2) if set_caption_embeddings is not None else None
 
-        cross_attention_caption = l2norm(cross_attention_caption)
-        cross_attention_image = l2norm(cross_attention_image)
+        cross_attention_caption = l2norm(cross_attention_caption) if cross_attention_caption is not None else None
+        cross_attention_image = l2norm(cross_attention_image) if cross_attention_image is not None else None
 
         # if self.order_embeddings:
         #     cross_attention_caption = torch.abs(cross_attention_caption)
@@ -327,8 +341,8 @@ class ALADModel(torch.nn.Module):
         """
         # Set mini-batch dataset
         if torch.cuda.is_available():
-            example_imgs = [c.cuda() if isinstance(c, torch.Tensor) else c for c in example_imgs]
-            example_txts = [c.cuda() if isinstance(c, torch.Tensor) else c for c in example_txts]
+            example_imgs = [c.cuda() if isinstance(c, torch.Tensor) else c for c in example_imgs] if example_imgs is not None else None
+            example_txts = [c.cuda() if isinstance(c, torch.Tensor) else c for c in example_txts] if example_txts is not None else None
 
         # Forward
         img_emb_aggr, cap_emb_aggr, img_feats, cap_feats, img_len, cap_len, regul_loss = self.img_txt_enc(example_imgs, example_txts)

@@ -1,3 +1,14 @@
+# ALADIN: Distilling Fine-grained Alignment Scores for Efficient Image-Text Matching and Retrieval
+
+## Introduction
+This is the code for reproducing the results from our paper *ALADIN: Distilling Fine-grained Alignment Scores for Efficient Image-Text Matching and Retrieval*, submitted to CBMI 2022.
+
+Our code is based on OSCAR, whose repository is available [here](https://github.com/microsoft/Oscar). 
+
+<p align="center">
+<img alt="Architecture" src="teaser.png" width="800px">
+</p>
+
 ## Installation
 ### Requirements
 - Python 3.7
@@ -65,7 +76,7 @@ The parameter `--config` is very important. Configurations are placed in yaml fo
 - `alad-matching-triplet-finetune.yaml`: Trains only the matching head using hinge-based triplet ranking loss. The parameter `--load-teacher-model` can be used to provide a backbone previously trained using the `alad-alignment-triplet.yaml` configuration;
 - `alad-matching-distill-finetune.yaml`: Trains only the matching head by distilling the scores from the alignment head. The parameter `--load-teacher-model` in this case IS NEEDED to provide a correctly trained alignment head, previously trained using the `alad-alignment-triplet.yaml` configuration;
 - `alad-matching-triplet-e2e.yaml`: Trains the matching head, finetuning also the Vin-VL backbone;
-- `alad-alignment-and-matching-distill.yaml` **[Experimental]** Trains the whole architecture (matching+alignment heads) end-to-end. The variable `activate_distillation_after` inside the configuration file controls how many epochs to wait before activating the distillation loss (wait that the backbone is minimally stable);
+- `alad-alignment-and-matching-distill.yaml`: Trains the whole architecture (matching+alignment heads) end-to-end. The variable `activate_distillation_after` inside the configuration file controls how many epochs to wait before activating the distillation loss (wait that the backbone is minimally stable); alternatively, you can load a pre-trained backbone using the `--load-teacher-model` option.
 
 ### Monitor Training
 Training and validation metrics, as well as model checkpoints are put inside the `<output-folder>` path.
@@ -79,6 +90,17 @@ The following script tests a model on the 1k MS-COCO test set
 ```
 cd alad
 python test.py --data_dir <data-folder>/coco_ir --img_feat_file <features-folder>/features.tsv --eval_model_dir <checkpoint-target-folder>/checkpoint-0132780 --max_seq_length 50 --max_img_seq_length 34 --eval_img_keys_file test_img_keys_1k.tsv --load_checkpoint <path/to/checkpoint.pth.tar>
-``` 
+```
+To train on 5k test set, simply set `--eval_img_keys_file test_img_keys.tsv`
 
-To train on 5k test set, simply set `--eval_img_keys_file test_img_keys.tsv` 
+### Using a pre-trained model
+If you want, you can download our best model, obtained with the `alad-alignment-and-matching-distill.yaml` configuration.
+
+[Work in progress]
+
+[//]: # (## Citation)
+
+[//]: # (If you found our work useful for your research, please cite our paper:)
+
+[//]: # ()
+[//]: # (TODO)

@@ -24,7 +24,7 @@ training:
   loss-weights: [1, 1]
   alignment-mode: 'MrSw'      # alignment: max over image regions, sum over the words
   distillation-mode: 'listnet'
-  activate_distillation_after: 0  # activate the distillation loss after 2 training epochs (wait that the backbone stabilizes)
+  activate_distillation_after: 0  # activate the distillation immediately (need to start with a pre-trained backbone)
   measure: 'dot'
   margin: 0.2                 # hinge-based triplet loss margin (alpha)
   bs: 32

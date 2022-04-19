@@ -9,7 +9,7 @@ from matplotlib.ticker import AutoMinorLocator
 x_log_scale = True
 
 if __name__ == '__main__':
-    data = {'models': ['AlaD A/ft. + D/ft.', 'AlaD A/ft.', 'Oscar', 'VinVL', 'TERN', 'TERAN'],
+    data = {'models': ['ALADIN A/ft. + D/ft.', 'ALADIN A/ft.', 'Oscar', 'VinVL', 'TERN', 'TERAN'],
             'times': [0.023*5, 0.098*5, 2.06*5, 2.06*5, 0.019*5, 0.075*5],
             'rsums': [215.0, 224.0, 223.3, 231.4, 169.2, 204.1],
             'color_ids': [0, 1, 2, 2, 0, 1]}

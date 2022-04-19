@@ -86,17 +86,12 @@ tensorboard --logdir <output-folder>
 ```
 
 ## Testing
-The following script tests a model on the 1k MS-COCO test set
+The following script tests a model on the 1k MS-COCO test set (you can download our best model from [here](https://drive.google.com/drive/folders/112fBqzpeQPnb9hk-HJ8vjkNRicXq1-gX?usp=sharing); it is obtained with the `alad-alignment-and-matching-distill.yaml` configuration.)
 ```
 cd alad
 python test.py --data_dir <data-folder>/coco_ir --img_feat_file <features-folder>/features.tsv --eval_model_dir <checkpoint-target-folder>/checkpoint-0132780 --max_seq_length 50 --max_img_seq_length 34 --eval_img_keys_file test_img_keys_1k.tsv --load_checkpoint <path/to/checkpoint.pth.tar>
 ```
-To train on 5k test set, simply set `--eval_img_keys_file test_img_keys.tsv`
-
-### Using a pre-trained model
-If you want, you can download our best model, obtained with the `alad-alignment-and-matching-distill.yaml` configuration.
-
-[Work in progress]
+To test on 5k test set, simply set `--eval_img_keys_file test_img_keys.tsv`.
 
 [//]: # (## Citation)
 

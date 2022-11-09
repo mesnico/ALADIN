@@ -93,9 +93,13 @@ python test.py --data_dir <data-folder>/coco_ir --img_feat_file <features-folder
 ```
 To test on 5k test set, simply set `--eval_img_keys_file test_img_keys.tsv`.
 
-[//]: # (## Citation)
+## Reference
+If you found this code useful, please cite the following paper:
 
-[//]: # (If you found our work useful for your research, please cite our paper:)
-
-[//]: # ()
-[//]: # (TODO)
+    @inproceedings{messina2022aladin,
+      title={ALADIN: Distilling Fine-grained Alignment Scores for Efficient Image-Text Matching and Retrieval},
+      author={Messina, Nicola and Stefanini, Matteo and Cornia, Marcella and Baraldi, Lorenzo and Falchi, Fabrizio and Amato, Giuseppe and Cucchiara, Rita},
+      booktitle={International Conference on Content-based Multimedia Indexing},
+      pages={64--70},
+      year={2022}
+    }

@@ -7,16 +7,22 @@ ALADIN_PATH=/media/nicola/Data/Workspace/OSCAR/Oscar
 
 #-------------- prepare some useful variables (modify if needed) -------------- #
 
-IMG_PATH=/media/datino/Dataset/VBS/V3C_dataset/V3C1
-OUT_PATH=/media/nicola/SSD/VBS_Features/V3C1_ALADIN
-mkdir -p $OUT_PATH
+DATASET=V3C1
 
-# IMG_LIST_FILE=${IMG_PATH}/v3c1_image_list.txt
-IMG_LIST_FILE=/media/nicola/Data/Workspace/OSCAR/Oscar/alad/extraction/v3c1_dummy_list.txt
+if [[ "$DATASET" == "V3C1" ]]; then
+    IMG_PATH=/media/datino/Dataset/VBS/V3C_dataset/V3C1
+    OUT_PATH=/media/nicola/SSD/VBS_Features/V3C1_ALADIN
+    IMG_LIST_FILE=${IMG_PATH}/v3c1_image_list.txt
+else
+    echo "Dataset ${DATASET} not recognized!"
+    exit 1;
+fi
+
+BATCH_SIZE=10000 # how many images we extract the feature of before running ALADIN and dumping to h5
+
+mkdir -p $OUT_PATH
 TOTAL_FILES=$(wc -l < $IMG_LIST_FILE)
 echo "Found ${TOTAL_FILES} images."
-
-BATCH_SIZE=25 # how many images we extract the feature of before running ALADIN and dumping to h5
 
 for FROM in $(seq 0 $BATCH_SIZE $TOTAL_FILES)
 do

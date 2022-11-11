@@ -171,9 +171,10 @@ def load_oscar():
     parser.add_argument('--config', type=str, help="Which configuration to use. See into 'config' folder")
     parser.add_argument('--features_h5', default='alad_features.h5', help='File where to store alad visual features')
 
-    args_list = '--data_dir /media/nicola/SSD/OSCAR_Datasets/coco_ir --img_feat_file /media/nicola/Data/Workspace/OSCAR/scene_graph_benchmark/output/X152C5_test/inference/vinvl_vg_x152c4/predictions.tsv --eval_model_dir /media/nicola/SSD/OSCAR_Datasets/checkpoint-0132780 --max_seq_length 50 --max_img_seq_length 34 --load_checkpoint /media/nicola/Data/Workspace/OSCAR/Oscar/alad/runs/alad-alignment-and-distill/model_best_rsum.pth.tar'
-    args_list = args_list.split(' ')
-    args = parser.parse_args(args=args_list)
+    # args_list = '--data_dir /media/nicola/SSD/OSCAR_Datasets/coco_ir --img_feat_file /media/nicola/Data/Workspace/OSCAR/scene_graph_benchmark/output/X152C5_test/inference/vinvl_vg_x152c4/predictions.tsv --eval_model_dir /media/nicola/SSD/OSCAR_Datasets/checkpoint-0132780 --max_seq_length 50 --max_img_seq_length 34 --load_checkpoint /media/nicola/Data/Workspace/OSCAR/Oscar/alad/runs/alad-alignment-and-distill/model_best_rsum.pth.tar'
+    # args_list = args_list.split(' ')
+    # args = parser.parse_args(args=args_list)
+    args = parser.parse_args()
     print(args)
 
     # torch.cuda.set_enabled_lms(True)

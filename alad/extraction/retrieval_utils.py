@@ -58,7 +58,7 @@ def scalar_quantization(x, threshold, factor=0, rotation_matrix=None, subtract_m
     x = fw.fix(factor * x).astype(int) if factor else x
     return x
 
-def load_oscar():
+def load_oscar(str_args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", default='datasets/coco_ir', type=str, required=False,
                         help="The input data dir with all required files.")
@@ -173,8 +173,11 @@ def load_oscar():
 
     # args_list = '--data_dir /media/nicola/SSD/OSCAR_Datasets/coco_ir --img_feat_file /media/nicola/Data/Workspace/OSCAR/scene_graph_benchmark/output/X152C5_test/inference/vinvl_vg_x152c4/predictions.tsv --eval_model_dir /media/nicola/SSD/OSCAR_Datasets/checkpoint-0132780 --max_seq_length 50 --max_img_seq_length 34 --load_checkpoint /media/nicola/Data/Workspace/OSCAR/Oscar/alad/runs/alad-alignment-and-distill/model_best_rsum.pth.tar'
     # args_list = args_list.split(' ')
-    # args = parser.parse_args(args=args_list)
-    args = parser.parse_args()
+    if str_args is not None:
+        str_args = str_args.split(' ')
+        args = parser.parse_args(args=str_args)
+    else:
+        args = parser.parse_args()
     print(args)
 
     # torch.cuda.set_enabled_lms(True)

@@ -7,12 +7,16 @@ ALADIN_PATH=/media/nicola/Data/Workspace/OSCAR/Oscar
 
 #-------------- prepare some useful variables (modify if needed) -------------- #
 
-DATASET=V3C1
+DATASET=$1
 
 if [[ "$DATASET" == "V3C1" ]]; then
     IMG_PATH=/media/datino/Dataset/VBS/V3C_dataset/V3C1
     OUT_PATH=/media/nicola/SSD/VBS_Features/V3C1_ALADIN
     IMG_LIST_FILE=${IMG_PATH}/v3c1_image_list.txt
+elif [[ "$DATASET" == "V3C2" ]]; then
+    IMG_PATH=/media/datino/Dataset/VBS/V3C_dataset/V3C2
+    OUT_PATH=/media/nicola/SSD/VBS_Features/V3C2_ALADIN
+    IMG_LIST_FILE=${IMG_PATH}/v3c2_image_list.txt
 else
     echo "Dataset ${DATASET} not recognized!"
     exit 1;
@@ -30,6 +34,7 @@ do
     sleep 1
 
     TO=$(( $FROM + $BATCH_SIZE ))
+    TO=$(( $TO > $TOTAL_FILES ? $TOTAL_FILES : $TO ))
     OUT_H5_FILE=${OUT_PATH}/aladin_features_${FROM}_${TO}.h5
 
     if [ -f "$OUT_H5_FILE" ]; then
@@ -56,7 +61,8 @@ do
     MODEL.ATTRIBUTE_ON True \
     TEST.OUTPUT_FEATURE True \
     DATASETS.LABELMAP_FILE models/vinvl/VG-SGG-dicts-vgoi6-clipped.json \
-    DATASETS.TEST "(\"train.yaml\", )"
+    DATASETS.TEST "(\"train.yaml\", )" \
+    DATALOADER.NUM_WORKERS 4
 
     #-------------- Extract ALADIN features (only if the previous extraction phase completed successfully) --------------#
 

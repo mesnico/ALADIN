@@ -9,8 +9,8 @@ from alad.extraction.retrieval_utils import compute_if_dask, scalar_quantization
 
 
 class QueryEncoder:
-    def __init__(self):
-        args, student_model, dataloader = load_oscar()
+    def __init__(self, str_args):
+        args, student_model, dataloader = load_oscar(str_args)
         self.model = student_model
         self.model.eval()
 
@@ -31,10 +31,10 @@ class ImageRetrieval:
         # Initialize image features
         image_data = h5py.File(features_h5_filename, 'r')
 
-        self.features = da.from_array(image_data['features'], chunks=(10000, 512)) if use_dask else image_data['features'][:]
+        self.features = da.from_array(image_data['features'], chunks=(10000, 768)) if use_dask else image_data['features'][:]
         self.shot_ids = image_data['image_names']
 
-        self.rotation_matrix = None
+        self.rotation_matrix = np.load('alad/extraction/random_rotation_matrix.npy').astype(np.float32)
 
     def encode_query_and_postprocess(self, query_feat, enable_scalar_quantization=False, factor=0, thr=30):
         if enable_scalar_quantization:
@@ -87,15 +87,16 @@ class ImageRetrieval:
 
 if __name__ == '__main__':
 
-    query_encoder = QueryEncoder()
-    vr = ImageRetrieval('alad_features.h5', use_dask=False)
+    query_encoder = QueryEncoder('--data_dir /media/nicola/SSD/OSCAR_Datasets/coco_ir --img_feat_file /media/nicola/Data/Workspace/OSCAR/scene_graph_benchmark/output/X152C5_test/inference/vinvl_vg_x152c4/predictions.tsv --eval_model_dir /media/nicola/SSD/OSCAR_Datasets/checkpoint-0132780 --max_seq_length 50 --max_img_seq_length 34 --load_checkpoint /media/nicola/Data/Workspace/OSCAR/Oscar/alad/runs/alad-alignment-and-distill/model_best_rsum.pth.tar')
+    vr = ImageRetrieval('/media/nicola/SSD/VBS_Features/aladin_v3c1_features.h5', use_dask=True)
     text = 'A man and a woman are talking' #'A man is doing acrobatics on a bike'
 
     # text = input('Text query: ')
     start_time = time.time()
     query_feat = query_encoder.get_text_embedding(text)
     query_time = time.time()
-    img_ids, similarities, _ = vr.sequential_search(query_feat)
+    img_ids, similarities, nzelems = vr.sequential_search(query_feat, enable_scalar_quantization=True, factor=0, thr=100)
     end_time = time.time()
+    print(f"Non zero elems: {nzelems}")
     print(img_ids[:20])
     print('Query encoding time: {}; Search time: {}'.format(query_time - start_time, end_time - query_time))

@@ -1,11 +1,14 @@
 import os
 import time
+import faiss
 
 import h5py
 import torch
 import dask.array as da
 import numpy as np
-from alad.extraction.retrieval_utils import compute_if_dask, scalar_quantization, load_oscar
+import tqdm
+from alad.extraction.retrieval_utils import load_oscar
+import surrogate
 
 
 class QueryEncoder:
@@ -25,78 +28,99 @@ class QueryEncoder:
             return txt_feature
 
 
-# TODO scalar quantization
 class ImageRetrieval:
-    def __init__(self, features_h5_filename, use_dask=True):
-        # Initialize image features
-        image_data = h5py.File(features_h5_filename, 'r')
+    def __init__(self, features_h5_filenames, sq_threshold=None, sq_factor=100, batch_size=10000, sq_method='thr'):
+        self.faiss = sq_threshold is None
+        assert sq_method in ['thr', 'topk']
 
-        self.features = da.from_array(image_data['features'], chunks=(10000, 768)) if use_dask else image_data['features'][:]
-        self.shot_ids = image_data['image_names']
+        if isinstance(features_h5_filenames, str):
+            features_h5_filenames = [features_h5_filenames]
 
-        self.rotation_matrix = np.load('alad/extraction/random_rotation_matrix.npy').astype(np.float32)
+        d = 768
 
-    def encode_query_and_postprocess(self, query_feat, enable_scalar_quantization=False, factor=0, thr=30):
-        if enable_scalar_quantization:
-            print('Using scalar quantization')
-            query_feat = scalar_quantization(query_feat, threshold=thr, factor=factor,
-                                             rotation_matrix=self.rotation_matrix, subtract_mean=False)
-            non_zero_elems = len(np.nonzero(query_feat)[0])
-            print('Number of non-zero elements in query: {}'.format(non_zero_elems))
-            print('Max query vector value: {}'.format(max(query_feat)))
+        for i, h5_file in enumerate(tqdm.tqdm(features_h5_filenames)):
+            image_data = h5py.File(h5_file, 'r')
+            features = image_data['features'][:]
+
+            if i == 0:
+                self.shot_ids = image_data['image_names'][:]
+
+                # create the indexes
+                if not self.faiss:
+                    rotation_matrix = np.load('alad/extraction/random_rotation_matrix.npy').astype(np.float32)
+                    if sq_method == 'thr':
+                        self.index = surrogate.ThresholdSQ(
+                            d,
+                            threshold_percentile=sq_threshold,
+                            sq_factor=sq_factor,
+                            subtract_mean=False,
+                            l2_normalize=False,
+                            rotation_matrix=rotation_matrix,
+                            parallel=False
+                        )
+                    else:
+                        self.index = surrogate.TopKSQ(
+                            d,
+                            keep=1 - (sq_threshold / 100.0),
+                            sq_factor=sq_factor,
+                            l2_normalize=False,
+                            rotation_matrix=rotation_matrix,
+                            parallel=False
+                        )
+                    self.index.train(features[:500000])
+                else:
+                    metric = faiss.METRIC_INNER_PRODUCT
+                    self.index = faiss.index_factory(d, 'Flat', metric)
+            else:
+                # features = np.concatenate((features, image_data['features'][:]), axis=0)
+                self.shot_ids = np.concatenate((self.shot_ids, image_data['image_names'][:]), axis=0)
+
+            # add items to the index, procedurally
+            for i in tqdm.trange(0, len(features), batch_size, desc='ADD'):
+                self.index.add(features[i:i+batch_size])
+
+            if not self.faiss:
+                # commit
+                self.index.commit()
+
+    def get_density(self):
+        if self.faiss:
+            return None
         else:
-            non_zero_elems = len(np.nonzero(query_feat)[0])
+            return self.index.density
 
-        return query_feat, non_zero_elems
-
-    def encode_features_and_postprocess(self, enable_scalar_quantization=False, factor=0, thr=30):
-        if enable_scalar_quantization:
-            features = scalar_quantization(self.features, threshold=thr, factor=factor,
-                                           rotation_matrix=self.rotation_matrix, subtract_mean=True)
+    def get_number_nz_elems(self):
+        if self.faiss:
+            return None
         else:
-            features = self.features
-        ids = self.shot_ids
+            nz_elems = self.index.db.count_nonzero() / self.index.db.shape[1]
+            return nz_elems
 
-        return features, ids
-
-    def sequential_search(self, query_feat, enable_scalar_quantization=False, factor=0, thr=30):
+    def search(self, q, k=1000):
         # given a caption as a query, search the most relevant images and return their indexes
-        cap_emb_aggr, non_zero_elems = self.encode_query_and_postprocess(query_feat, enable_scalar_quantization, factor, thr)
-        features, _ = self.encode_features_and_postprocess(enable_scalar_quantization, factor, thr)
+        q = q[np.newaxis, :]
+        sims, idxs = self.index.search(q, k=k)
+        sims = sims[0]
+        idxs = idxs[0]
+        img_ids = [self.shot_ids[i].decode() for i in idxs]
 
-        # similarities = np.zeros(len(self.features))
-        # img_ids = []
-        # for i, (k, v) in enumerate(tqdm.tqdm(self.features.items())):
-        #     if enable_scalar_quantization:
-        #         v = scalar_quantization(v, rotation_matrix=self.rotation_matrix, subtract_mean=True)
-        #
-        #     similarities[i] = np.dot(cap_emb_aggr, v)
-        #     img_ids.append(k)
-
-        # use the power of dask
-        print('Computing similarities...')
-        similarities = features.dot(cap_emb_aggr)
-        similarities = compute_if_dask(similarities)
-
-        # sort by decreasing similarities
-        inds = np.argsort(similarities)[::-1].astype(int)
-        img_ids = [self.shot_ids[i].decode() for i in inds]
-        ordered_similarities = similarities[inds]
-
-        return img_ids, ordered_similarities, non_zero_elems
+        return img_ids, sims
 
 if __name__ == '__main__':
 
+    sq_thr = 50
+    sq_factor = 100
+
     query_encoder = QueryEncoder('--data_dir /media/nicola/SSD/OSCAR_Datasets/coco_ir --img_feat_file /media/nicola/Data/Workspace/OSCAR/scene_graph_benchmark/output/X152C5_test/inference/vinvl_vg_x152c4/predictions.tsv --eval_model_dir /media/nicola/SSD/OSCAR_Datasets/checkpoint-0132780 --max_seq_length 50 --max_img_seq_length 34 --load_checkpoint /media/nicola/Data/Workspace/OSCAR/Oscar/alad/runs/alad-alignment-and-distill/model_best_rsum.pth.tar')
-    vr = ImageRetrieval('/media/nicola/SSD/VBS_Features/aladin_v3c1_features.h5', use_dask=True)
+    ir = ImageRetrieval(['/media/nicola/SSD/VBS_Features/aladin_v3c1_features.h5'], sq_threshold=sq_thr, sq_factor=sq_factor)
     text = 'A man and a woman are talking' #'A man is doing acrobatics on a bike'
 
     # text = input('Text query: ')
     start_time = time.time()
     query_feat = query_encoder.get_text_embedding(text)
     query_time = time.time()
-    img_ids, similarities, nzelems = vr.sequential_search(query_feat, enable_scalar_quantization=True, factor=0, thr=100)
+    img_ids, similarities = ir.search(query_feat, k=20)
     end_time = time.time()
-    print(f"Non zero elems: {nzelems}")
-    print(img_ids[:20])
+    print(f"Non zero elems: {ir.get_avg_nz_elems()}")
     print('Query encoding time: {}; Search time: {}'.format(query_time - start_time, end_time - query_time))
+    print(img_ids)

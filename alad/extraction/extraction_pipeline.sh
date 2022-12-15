@@ -17,6 +17,10 @@ elif [[ "$DATASET" == "V3C2" ]]; then
     IMG_PATH=/media/datino/Dataset/VBS/V3C_dataset/V3C2
     OUT_PATH=/media/nicola/SSD/VBS_Features/V3C2_ALADIN
     IMG_LIST_FILE=${IMG_PATH}/v3c2_image_list.txt
+elif [[ "$DATASET" == "MVK" ]]; then
+    IMG_PATH=/media/visione/data/vbs/mvk/
+    OUT_PATH=/media/nicola/SSD/VBS_Features/MVK
+    IMG_LIST_FILE=${IMG_PATH}/frames_list.txt
 else
     echo "Dataset ${DATASET} not recognized!"
     exit 1;
@@ -61,8 +65,7 @@ do
     MODEL.ATTRIBUTE_ON True \
     TEST.OUTPUT_FEATURE True \
     DATASETS.LABELMAP_FILE models/vinvl/VG-SGG-dicts-vgoi6-clipped.json \
-    DATASETS.TEST "(\"train.yaml\", )" \
-    DATALOADER.NUM_WORKERS 4
+    DATASETS.TEST "(\"train.yaml\", )"
 
     #-------------- Extract ALADIN features (only if the previous extraction phase completed successfully) --------------#
 

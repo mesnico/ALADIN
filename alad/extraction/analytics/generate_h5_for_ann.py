@@ -4,16 +4,16 @@ import h5py
 import tqdm
 import numpy as np
 import argparse
-import dask.array as da
+import faiss
 import os
 import pickle
 from alad.extraction.image_retrieval import QueryEncoder
 from alad.extraction.retrieval_utils import compute_if_dask
 
-captions_txt = '/media/nicola/Data/Workspace/TERE/vbs/ann_experiments/vbs_log_captions.txt'
-tern_checkpoint = "runs/ALIGN/WITH_ICLS/tere_alignment_tern_teran_uncertainty_weighting/model_best_ndcgspice.pth.tar"
-feat_dbs = {'v3c1': "alad_features.h5"}
-            # 'v3c2': "/media/datino/Dataset/VBS/descriptors_feature_extracted/TERN/V3C2/tern_features.h5"}
+alad_args = '--data_dir /media/nicola/SSD/OSCAR_Datasets/coco_ir --img_feat_file /media/nicola/Data/Workspace/OSCAR/scene_graph_benchmark/output/X152C5_test/inference/vinvl_vg_x152c4/predictions.tsv --eval_model_dir /media/nicola/SSD/OSCAR_Datasets/checkpoint-0132780 --max_seq_length 50 --max_img_seq_length 34 --load_checkpoint /media/nicola/Data/Workspace/OSCAR/Oscar/alad/runs/alad-alignment-and-distill/model_best_rsum.pth.tar'
+captions_txt = 'alad/extraction/analytics/output/queries_from_coco.txt'
+feat_dbs = {'v3c1': "/media/nicola/SSD/VBS_Features/aladin_v3c1_features.h5",
+            'v3c2': "/media/nicola/SSD/VBS_Features/aladin_v3c2_features.h5"}
 
 random.seed(42)
 
@@ -23,7 +23,7 @@ def get_caption_features():
 
     # need to forward the network for that...
     cap_features = []
-    qe = QueryEncoder()
+    qe = QueryEncoder(alad_args)
     for cap in tqdm.tqdm(captions):
         cap_feature = qe.get_text_embedding(cap)
         cap_features.append(cap_feature)
@@ -40,20 +40,27 @@ def similarity_search(query_features, items_features, num_neighbors=100):
     all_neighbors = np.zeros((query_features.shape[0], num_neighbors), dtype=np.int)
     all_distances = np.zeros((query_features.shape[0], num_neighbors), dtype=np.float32)
 
-    items_features = da.from_array(items_features, chunks=(10000, 1024))
+    metric = faiss.METRIC_INNER_PRODUCT
+    index = faiss.index_factory(items_features.shape[1], 'Flat', metric)
+
+    index.add(item_features)
 
     # returns distances, neighbors for each query
     for i in tqdm.trange(query_features.shape[0]):
         query_feat = query_features[i]
-        similarities = items_features.dot(query_feat)
-        similarities = compute_if_dask(similarities, progress=False)
-        distances = 1 - similarities
+        # similarities = items_features.dot(query_feat)
+        # similarities = compute_if_dask(similarities, progress=False)
+        # distances = 1 - similarities
+        sims, idxs = index.search(query_feat[np.newaxis, :], k=num_neighbors)
+        sims = sims[0]
+        idxs = idxs[0]
+        dists = 1 - sims
 
         # sort by decreasing similarities
-        ordered_neighbors = np.argsort(distances).astype(int)[:num_neighbors]
-        ordered_distances = distances[ordered_neighbors]
-        all_neighbors[i] = ordered_neighbors
-        all_distances[i] = ordered_distances
+        # ordered_neighbors = np.argsort(distances).astype(int)[:num_neighbors]
+        # ordered_distances = distances[ordered_neighbors]
+        all_neighbors[i] = idxs
+        all_distances[i] = dists
         # if i == 3:
         #     break
     # all_neighbors = np.stack(all_neighbors)
@@ -102,7 +109,7 @@ if __name__ == '__main__':
         distances = distances[:, 1:]
 
     # save to hdf5
-    out_hdf5_filename = 'alad_features_ann_{}_{}.h5'.format(args.split, args.type)
+    out_hdf5_filename = 'alad/extraction/analytics/output/alad_features_ann_{}_{}.h5'.format(args.split, args.type)
     print('Writing on {}'.format(out_hdf5_filename))
     with h5py.File(out_hdf5_filename, 'w') as f:
         f.create_dataset('train', data=item_features)

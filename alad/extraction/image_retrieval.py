@@ -1,10 +1,8 @@
-import os
 import time
 import faiss
 
 import h5py
 import torch
-import dask.array as da
 import numpy as np
 import tqdm
 from alad.extraction.retrieval_utils import load_oscar
@@ -111,9 +109,9 @@ if __name__ == '__main__':
     sq_thr = 50
     sq_factor = 100
 
-    query_encoder = QueryEncoder('--data_dir /media/nicola/SSD/OSCAR_Datasets/coco_ir --img_feat_file /media/nicola/Data/Workspace/OSCAR/scene_graph_benchmark/output/X152C5_test/inference/vinvl_vg_x152c4/predictions.tsv --eval_model_dir /media/nicola/SSD/OSCAR_Datasets/checkpoint-0132780 --max_seq_length 50 --max_img_seq_length 34 --load_checkpoint /media/nicola/Data/Workspace/OSCAR/Oscar/alad/runs/alad-alignment-and-distill/model_best_rsum.pth.tar')
-    ir = ImageRetrieval(['/media/nicola/SSD/VBS_Features/aladin_v3c1_features.h5'], sq_threshold=sq_thr, sq_factor=sq_factor)
-    text = 'A man and a woman are talking' #'A man is doing acrobatics on a bike'
+    query_encoder = QueryEncoder('--eval_model_dir checkpoints --max_seq_length 50 --max_img_seq_length 34 --load_checkpoint alad/checkpoints/model_best_rsum.pth.tar')
+    ir = ImageRetrieval(['/media/nicola/SSD/VBS_Features/aladin_v3c1_features.h5'], sq_threshold=None)
+    text = 'A man and a woman are talking'
 
     # text = input('Text query: ')
     start_time = time.time()
@@ -121,6 +119,6 @@ if __name__ == '__main__':
     query_time = time.time()
     img_ids, similarities = ir.search(query_feat, k=20)
     end_time = time.time()
-    print(f"Non zero elems: {ir.get_avg_nz_elems()}")
+    print(f"Non zero elems: {ir.get_number_nz_elems()}")
     print('Query encoding time: {}; Search time: {}'.format(query_time - start_time, end_time - query_time))
     print(img_ids)

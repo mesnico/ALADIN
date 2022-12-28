@@ -1,0 +1,11 @@
+**/*.h5
+**/*.faiss
+**/*.pkl
+**/runs*
+
+data/
+build/
+.vscode/
+.git/
+__pycache__/
+test/

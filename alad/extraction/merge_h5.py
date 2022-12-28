@@ -18,7 +18,10 @@ def main(args):
         if mode == 'w':
             print(f'Writing on file {args.out_file}')
             row1 = 0
-            for i, h5name in enumerate(tqdm.tqdm(glob.glob(args.path + '/*.h5'))):
+            files = glob.glob(args.path + '/*.h5')
+            ordered_files = sorted(files, key=lambda x: int(x.split('_')[-2]))
+
+            for i, h5name in enumerate(tqdm.tqdm(ordered_files)):
                 # open file in read mode and open the datasets
                 h5fr = h5py.File(h5name,'r')
                 features = h5fr['features'][:]

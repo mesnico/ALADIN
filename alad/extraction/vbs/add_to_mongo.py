@@ -20,7 +20,7 @@ def grouper(iterable, n):
         yield itertools.chain((first_el,), chunk_it)
 
 
-def generate_records(feat_db):
+def generate_records(feat_db, dataset):
     """ Generatore dei vostri records. Ogni record è un dict. """
 
     with h5py.File(feat_db, 'r') as image_data:
@@ -41,15 +41,7 @@ def generate_records(feat_db):
                 # quindi è il campo da usare per fare retrival
                 # veloce delle info di un frame.
 
-                'video_id': img_id.rsplit('_', 1)[0],  # ho messo questo riferimento al video, pensavo di fare un'altra collezione
-                # in Mongo dove inserire le info del video, e questa potrebbe essere l'_id
-                # in quella collezione.
-                # frame size
-                # 'width': 1920,
-                # 'height': 1080,  # width e height le ho messe in questa collezione perchè le avevo già,
-                # ma andrebbero messe in una collezione separata con le info generiche
-                # dell'immagine o del video, non vi consiglio di metterle di nuovo in mongo
-                # nella vostra collezione che conterrà gli oggetti/bbox.
+                'video_id': img_id.rsplit('_', 1)[0] if dataset == 'mvk' else img_id.split('_')[0],
 
                 'feature': feat
             }
@@ -95,7 +87,7 @@ def main(args):
     collection = client[db_name][collection_name]
 
     # la lista di dict da inserire (qua è un generatore più che una lista)
-    records = generate_records(args.input)
+    records = generate_records(args.input, db_name)
 
     # si fanno batch di record da inserire per fare bulk indexing e velocizzare
     batch_size = 1000

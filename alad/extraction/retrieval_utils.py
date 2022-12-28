@@ -1,21 +1,15 @@
 from __future__ import absolute_import, division, print_function
 from os import path as op
 
-import dask.array as da
-from dask.diagnostics import ProgressBar
-
 import argparse
 import os
 import os.path as op
-import tqdm
-import h5py
 
 import torch
 import numpy as np
 from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 
 from alad.extraction.tsv_image_dataset import RetrievalDataset, MyCollate
-import time
 
 from oscar.utils.logger import setup_logger
 from oscar.utils.misc import mkdir, set_seed
@@ -23,40 +17,6 @@ from transformers.pytorch_transformers import BertTokenizer, BertConfig
 from alad.alad_model import ALADModel
 
 import logging
-
-def is_dask(x):
-    return isinstance(x, da.core.Array)
-
-def compute_if_dask(x, progress=True):
-    if not is_dask(x):
-        return x
-
-    if progress:
-        with ProgressBar():
-            return x.compute()
-
-    return x.compute()
-
-def crelu(x):
-    fw = da if isinstance(x, da.core.Array) else np
-    return fw.hstack([fw.maximum(x, 0), - fw.minimum(x, 0)])
-
-def scalar_quantization(x, threshold, factor=0, rotation_matrix=None, subtract_mean=True):
-    if rotation_matrix is not None:
-        x = x.dot(rotation_matrix.T)
-    if subtract_mean:
-        x -= x.mean(axis=0)
-
-    x = crelu(x)
-
-    fw = da if isinstance(x, da.core.Array) else np
-    # threshold
-    tmp = fw.maximum(fw.fabs(x) - (1. / threshold), 0)
-    tmp += (1. / threshold) * (tmp > 0)
-    x = fw.copysign(tmp, x)
-    # scalar quantization (optional)
-    x = fw.fix(factor * x).astype(int) if factor else x
-    return x
 
 def load_oscar(str_args=None):
     parser = argparse.ArgumentParser()

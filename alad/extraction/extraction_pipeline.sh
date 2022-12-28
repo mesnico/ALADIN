@@ -80,10 +80,10 @@ do
     PYTHONPATH=. conda run --no-capture-output -n oscar python alad/extraction/extract_visual_features.py\
     --data_dir /media/nicola/SSD/OSCAR_Datasets/coco_ir\
     --img_feat_file ${SG_BENCHMARK_PATH}/output/X152C5_test/inference/vinvl_vg_x152c4/predictions.tsv\
-    --eval_model_dir /media/nicola/SSD/OSCAR_Datasets/checkpoint-0132780\
+    --eval_model_dir checkpoints\
     --max_seq_length 50\
     --max_img_seq_length 34\
-    --load_checkpoint alad/runs/alad-alignment-and-distill/model_best_rsum.pth.tar\
+    --load_checkpoint alad/checkpoints/model_best_rsum.pth.tar\
     --features_h5 $OUT_H5_FILE
 
 done

@@ -136,3 +136,19 @@ examples/runs
 data
 models
 output
+
+# features
+*.h5
+
+# pickle files
+*.pkl
+
+# result folders
+plots/
+results/
+checkpoints/
+
+# old files
+.gitold
+teran
+runs_old

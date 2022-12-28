@@ -1,0 +1,46 @@
+name: oscar
+channels:
+  - pytorch
+  - https://public.dhe.ibm.com/ibmdl/export/pub/software/server/ibm-ai/conda/
+  - defaults
+dependencies:
+  - mkl=2021.2.0
+  - ncurses=6.2
+  - ninja=1.10.2
+  - numpy=1.20.2
+  - numpy-base=1.20.2
+  - olefile=0.46
+  - openssl=1.1.1k
+  - pillow=8.2.0
+  - pip=21.1.2
+  - pycparser=2.20
+  - python=3.7.10
+  - readline=8.1
+  - setuptools=52.0.0
+  - six=1.16.0
+  - sqlite=3.35.4
+  - tk=8.6.10
+  - wheel=0.36.2
+  - zlib=1.2.11
+  - zstd=1.4.9
+  - pytorch=1.2.0
+  - torchvision=0.4.0
+  - cpuonly
+  - faiss-cpu
+  - pip:
+    - scipy==1.7.0
+    - tensorboard==2.5.0
+    - tqdm
+    - pyyaml
+    - matplotlib
+    - requests
+    - scikit-image
+    - anytree
+    - regex
+    - boto3
+    - Flask
+    - pymongo
+    - h5py
+    - git+https://github.com/fabiocarrara/str-encoders
+    
+

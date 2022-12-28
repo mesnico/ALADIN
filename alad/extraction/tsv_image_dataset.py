@@ -1,7 +1,6 @@
 from __future__ import absolute_import, division, print_function
 import argparse
 import itertools
-import os
 import base64
 import os.path as op
 import random, json
@@ -34,11 +33,15 @@ class RetrievalDataset(Dataset):
         """
         super(RetrievalDataset, self).__init__()
         self.img_file = args.img_feat_file
-        self.img_tsv = TSVFile(self.img_file)
+
         self.img_keys = []
-        for line_no in range(self.img_tsv.num_rows()):
-            row = self.img_tsv.seek(line_no)
-            self.img_keys.append(row[0])
+        if op.isfile(self.img_file):
+            self.img_tsv = TSVFile(self.img_file)
+            for line_no in range(self.img_tsv.num_rows()):
+                row = self.img_tsv.seek(line_no)
+                self.img_keys.append(row[0])
+        else:
+            self.img_tsv = None
 
         # if args.add_od_labels:
         #     label_data_dir = op.dirname(self.img_file)

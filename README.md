@@ -1,7 +1,7 @@
 # ALADIN: Distilling Fine-grained Alignment Scores for Efficient Image-Text Matching and Retrieval
 
 ## Introduction
-This is the code for reproducing the results from our paper *ALADIN: Distilling Fine-grained Alignment Scores for Efficient Image-Text Matching and Retrieval*, submitted to CBMI 2022.
+This is the code for reproducing the results from our paper *ALADIN: Distilling Fine-grained Alignment Scores for Efficient Image-Text Matching and Retrieval*, accepted at [CBMI 2022](https://cbmi2022.org/).
 
 Our code is based on OSCAR, whose repository is available [here](https://github.com/microsoft/Oscar). 
 

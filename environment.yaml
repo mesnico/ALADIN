@@ -41,6 +41,6 @@ dependencies:
     - Flask
     - pymongo
     - h5py
-    - git+https://github.com/fabiocarrara/str-encoders
+    - git+https://github.com/fabiocarrara/str-encoders@b0b49df
     
 

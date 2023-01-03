@@ -77,5 +77,5 @@ def query_example():
     return x_str[0]
 
 if __name__ == '__main__':
-    # run app in debug mode on port 5005
-    app.run(debug=False, host='0.0.0.0', port=5021)
+    # run app on port 5020
+    app.run(debug=False, host='0.0.0.0', port=5020)

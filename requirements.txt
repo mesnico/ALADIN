@@ -6,6 +6,4 @@ scikit-image
 anytree
 regex
 boto3
-Flask
-pymongo
-git+https://github.com/fabiocarrara/str-encoders
+h5py
